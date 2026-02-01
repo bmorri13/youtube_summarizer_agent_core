@@ -66,7 +66,7 @@ variable "enable_scheduled_monitoring" {
 }
 
 variable "enable_observability" {
-  description = "Enable ADOT observability and CloudWatch custom logging"
+  description = "Enable OpenTelemetry tracing and CloudWatch custom logging"
   type        = bool
   default     = true
 }

@@ -20,15 +20,12 @@ resource "aws_lambda_function" "main" {
         # Note: AWS_REGION is automatically provided by Lambda
       },
       var.enable_observability ? {
-        # ADOT auto-instrumentation (AgentCore Observability)
-        AWS_LAMBDA_EXEC_WRAPPER     = "/opt/otel-instrument"
+        # OpenTelemetry config for container-based Lambda (no layer/wrapper needed)
         OTEL_SERVICE_NAME           = var.project_name
-        OTEL_PYTHON_DISTRO          = "aws_distro"
-        OTEL_PYTHON_CONFIGURATOR    = "aws_configurator"
         OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp.${var.aws_region}.amazonaws.com"
         OTEL_TRACES_EXPORTER        = "otlp"
-        OTEL_METRICS_EXPORTER       = "otlp"
-        OTEL_LOGS_EXPORTER          = "otlp"
+        OTEL_METRICS_EXPORTER       = "none"
+        OTEL_LOGS_EXPORTER          = "none"
 
         # CloudWatch logging
         CLOUDWATCH_LOG_GROUP        = "/aws/bedrock-agentcore/${var.project_name}"
