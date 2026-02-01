@@ -1,0 +1,26 @@
+# Secrets - NEVER COMMIT
+.env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+venv/
+.venv/
+
+# Build artifacts
+youtube-analyzer.zip
+*.zip
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+
+# Claude Code
+.claude/
+
+# Generated output (optional)
+# notes/

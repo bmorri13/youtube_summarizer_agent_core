@@ -1,0 +1,14 @@
+anthropic>=0.42.0
+youtube-transcript-api>=1.2.3
+fastapi>=0.115.0
+uvicorn>=0.32.0
+boto3>=1.35.0
+requests>=2.32.0
+python-dotenv>=1.0.0
+
+# AWS AgentCore Observability (ADOT auto-instrumentation)
+aws-opentelemetry-distro>=0.10.0
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+opentelemetry-instrumentation-requests>=0.41b0
+watchtower>=3.0.0

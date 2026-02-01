@@ -1,0 +1,113 @@
+# Docker Compose for YouTube Analyzer
+#
+# Usage:
+#   Local development:     docker-compose up local
+#   Lambda emulation:      docker-compose up lambda
+#   HTTP server mode:      docker-compose up server
+
+services:
+  # Local development - interactive mode
+  local:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: youtube-analyzer-local
+    stdin_open: true
+    tty: true
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - SLACK_DEFAULT_CHANNEL=${SLACK_DEFAULT_CHANNEL:-#youtube-summaries}
+      - NOTES_BACKEND=local
+      - NOTES_LOCAL_DIR=/app/notes
+      # AWS AgentCore Observability
+      - AGENT_OBSERVABILITY_ENABLED=${AGENT_OBSERVABILITY_ENABLED:-false}
+      - OTEL_SERVICE_NAME=youtube-analyzer-agent
+      - CLOUDWATCH_LOG_GROUP=${CLOUDWATCH_LOG_GROUP:-/aws/bedrock-agentcore/youtube-analyzer}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+    volumes:
+      - ./notes:/app/notes
+      - ./.env:/app/.env:ro
+    command: python run_local.py
+
+  # Run a single video analysis
+  analyze:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: youtube-analyzer-single
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - NOTES_BACKEND=local
+      - NOTES_LOCAL_DIR=/app/notes
+      # AWS AgentCore Observability
+      - AGENT_OBSERVABILITY_ENABLED=${AGENT_OBSERVABILITY_ENABLED:-false}
+      - OTEL_SERVICE_NAME=youtube-analyzer-agent
+      - CLOUDWATCH_LOG_GROUP=${CLOUDWATCH_LOG_GROUP:-/aws/bedrock-agentcore/youtube-analyzer}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+    volumes:
+      - ./notes:/app/notes
+    command: python agent.py "${VIDEO_URL:-https://www.youtube.com/watch?v=dQw4w9WgXcQ}"
+
+  # Lambda emulation for testing Lambda deployment
+  lambda:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: youtube-analyzer-lambda
+    ports:
+      - "9000:8080"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - NOTES_BACKEND=local
+      - NOTES_LOCAL_DIR=/tmp/notes
+      - CLAUDE_MODEL=claude-sonnet-4-20250514
+      # AWS AgentCore Observability
+      - AGENT_OBSERVABILITY_ENABLED=${AGENT_OBSERVABILITY_ENABLED:-true}
+      - OTEL_SERVICE_NAME=youtube-analyzer-agent
+      - CLOUDWATCH_LOG_GROUP=${CLOUDWATCH_LOG_GROUP:-/aws/bedrock-agentcore/youtube-analyzer}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      # OpenTelemetry settings for AWS
+      - OTEL_PYTHON_DISTRO=aws_distro
+      - OTEL_PYTHON_CONFIGURATOR=aws_configurator
+      - OTEL_TRACES_EXPORTER=otlp
+    volumes:
+      - ./notes:/tmp/notes
+
+  # HTTP server mode (FastAPI)
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: youtube-analyzer-server
+    ports:
+      - "8080:8080"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - NOTES_BACKEND=local
+      - NOTES_LOCAL_DIR=/app/notes
+      # AWS AgentCore Observability
+      - AGENT_OBSERVABILITY_ENABLED=${AGENT_OBSERVABILITY_ENABLED:-false}
+      - OTEL_SERVICE_NAME=youtube-analyzer-agent
+      - CLOUDWATCH_LOG_GROUP=${CLOUDWATCH_LOG_GROUP:-/aws/bedrock-agentcore/youtube-analyzer}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+    volumes:
+      - ./notes:/app/notes
+    command: python server.py

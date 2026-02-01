@@ -1,0 +1,34 @@
+# Copy this file to terraform.tfvars and fill in your values
+# terraform.tfvars is gitignored to protect secrets
+
+# Required
+anthropic_api_key = "sk-ant-api03-..."
+
+# Optional - Slack notifications
+slack_webhook_url = ""
+
+# Optional - AWS region (default: us-east-1)
+# aws_region = "us-east-1"
+
+# Optional - Environment name (default: prod)
+# environment = "prod"
+
+# Optional - Lambda configuration
+# lambda_memory_size = 1024
+# lambda_timeout = 300
+
+# Optional - Claude model
+# claude_model = "claude-sonnet-4-20250514"
+
+# Optional - Scheduled monitoring
+# enable_scheduled_monitoring = false
+# schedule_expression = "rate(1 hour)"
+# monitor_channel_urls = "https://www.youtube.com/@Channel1/videos,https://www.youtube.com/@Channel2/videos"
+
+# Optional - Observability (default: true)
+# enable_observability = true
+# log_retention_days = 30
+
+# Optional - Alarms
+# enable_alarms = false
+# alarm_email = "your-email@example.com"

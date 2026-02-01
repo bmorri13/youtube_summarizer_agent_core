@@ -1,0 +1,109 @@
+# Bootstrap Workflow - One-Time Setup
+#
+# This workflow creates the foundational infrastructure needed for CI/CD:
+# - S3 bucket for Terraform state
+# - DynamoDB table for state locking
+# - GitHub OIDC provider for keyless authentication
+# - IAM role for GitHub Actions
+#
+# IMPORTANT: This workflow requires temporary AWS credentials.
+# After running, delete AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from secrets.
+
+name: Bootstrap Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      github_org:
+        description: 'GitHub organization or username'
+        required: true
+        type: string
+      github_repo:
+        description: 'GitHub repository name'
+        required: true
+        default: 'youtube_summarizer_agent_core'
+        type: string
+      aws_region:
+        description: 'AWS region'
+        required: true
+        default: 'us-east-1'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    name: Create Bootstrap Infrastructure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (temporary)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.0"
+
+      - name: Terraform Init
+        working-directory: terraform/backend-bootstrap
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: terraform/backend-bootstrap
+        run: |
+          terraform plan \
+            -var="github_org=${{ inputs.github_org }}" \
+            -var="github_repo=${{ inputs.github_repo }}" \
+            -var="aws_region=${{ inputs.aws_region }}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: terraform/backend-bootstrap
+        run: terraform apply -auto-approve tfplan
+
+      - name: Get Outputs
+        working-directory: terraform/backend-bootstrap
+        id: outputs
+        run: |
+          echo "## Bootstrap Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### GitHub Actions Role ARN" >> $GITHUB_STEP_SUMMARY
+          echo "Add this to GitHub Secrets as \`AWS_ROLE_ARN\`:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          terraform output -raw github_actions_role_arn >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Terraform State Bucket" >> $GITHUB_STEP_SUMMARY
+          echo "Update \`terraform/backend.tf\` with:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          terraform output -raw terraform_state_bucket >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          terraform output -raw next_steps >> $GITHUB_STEP_SUMMARY
+
+      - name: Display Role ARN
+        working-directory: terraform/backend-bootstrap
+        run: |
+          echo "============================================"
+          echo "IMPORTANT: Copy the following Role ARN"
+          echo "Add it to GitHub Secrets as AWS_ROLE_ARN"
+          echo "============================================"
+          terraform output -raw github_actions_role_arn
+          echo ""
+          echo "============================================"
+          echo "Then DELETE these secrets:"
+          echo "  - AWS_ACCESS_KEY_ID"
+          echo "  - AWS_SECRET_ACCESS_KEY"
+          echo "============================================"

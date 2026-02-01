@@ -1,0 +1,31 @@
+# YouTube Analyzer Agent - Local Development Dockerfile
+
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first for better layer caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY agent.py .
+COPY lambda_handler.py .
+COPY server.py .
+COPY run_local.py .
+COPY run_scheduled.py .
+COPY observability.py .
+COPY tools/ ./tools/
+
+# Create notes directory
+RUN mkdir -p /app/notes
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Default command - interactive mode
+CMD ["python", "run_local.py"]
