@@ -1,8 +1,3 @@
-output "api_endpoint" {
-  description = "API Gateway endpoint URL for the analyze endpoint"
-  value       = "${aws_apigatewayv2_api.main.api_endpoint}/analyze"
-}
-
 output "lambda_function_name" {
   description = "Name of the Lambda function"
   value       = aws_lambda_function.main.function_name

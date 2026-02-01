@@ -232,7 +232,6 @@ jobs:
     needs: [terraform-plan, build]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && !inputs.skip_apply
     outputs:
-      api_endpoint: ${{ steps.outputs.outputs.api_endpoint }}
       lambda_function_name: ${{ steps.outputs.outputs.lambda_function_name }}
       ecr_repository_url: ${{ steps.outputs.outputs.ecr_repository_url }}
 
@@ -263,14 +262,12 @@ jobs:
         working-directory: terraform
         id: outputs
         run: |
-          echo "api_endpoint=$(terraform output -raw api_endpoint 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "lambda_function_name=$(terraform output -raw lambda_function_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "ecr_repository_url=$(terraform output -raw ecr_repository_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
       - name: Summary
         run: |
           echo "## Terraform Apply Complete" >> $GITHUB_STEP_SUMMARY
-          echo "**API Endpoint:** ${{ steps.outputs.outputs.api_endpoint }}" >> $GITHUB_STEP_SUMMARY
           echo "**Lambda Function:** ${{ steps.outputs.outputs.lambda_function_name }}" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================
@@ -348,25 +345,10 @@ jobs:
             exit 1
           fi
 
-      - name: Test API endpoint
-        if: needs.terraform-apply.outputs.api_endpoint != ''
-        run: |
-          API_ENDPOINT="${{ needs.terraform-apply.outputs.api_endpoint }}"
-
-          # Health check (if endpoint exists)
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${API_ENDPOINT}/health" || echo "000")
-
-          if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "404" ]; then
-            echo "API endpoint is reachable (status: $HTTP_STATUS)"
-          else
-            echo "Warning: API endpoint returned unexpected status: $HTTP_STATUS"
-          fi
-
       - name: Summary
         run: |
           echo "## Smoke Test Results" >> $GITHUB_STEP_SUMMARY
           echo "Lambda invocation successful" >> $GITHUB_STEP_SUMMARY
-          echo "**API Endpoint:** ${{ needs.terraform-apply.outputs.api_endpoint }}" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================
   # Final Summary
