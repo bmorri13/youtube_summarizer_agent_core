@@ -17,7 +17,7 @@ resource "aws_lambda_function" "main" {
         CLAUDE_MODEL         = var.claude_model
         SLACK_WEBHOOK_URL    = var.slack_webhook_url
         MONITOR_CHANNEL_URLS = var.monitor_channel_urls
-        AWS_REGION           = var.aws_region
+        # Note: AWS_REGION is automatically provided by Lambda
       },
       var.enable_observability ? {
         # ADOT auto-instrumentation (AgentCore Observability)
