@@ -15,7 +15,7 @@ services:
     stdin_open: true
     tty: true
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
       - SLACK_DEFAULT_CHANNEL=${SLACK_DEFAULT_CHANNEL:-#youtube-summaries}
@@ -41,7 +41,7 @@ services:
       dockerfile: Dockerfile.local
     container_name: youtube-analyzer-single
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
       - NOTES_BACKEND=local
@@ -67,7 +67,7 @@ services:
     ports:
       - "9000:8080"
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
       - NOTES_BACKEND=local
@@ -95,7 +95,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
       - NOTES_BACKEND=local
