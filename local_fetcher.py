@@ -35,9 +35,10 @@ def is_video_processed_s3(video_id: str) -> bool:
 
     try:
         # Check if processed_videos.json exists and contains this video
-        response = s3_client.get_object(Bucket=bucket, Key="processed_videos.json")
+        # Note: Lambda saves to notes/processed_videos.json
+        response = s3_client.get_object(Bucket=bucket, Key="notes/processed_videos.json")
         processed = json.loads(response["Body"].read().decode("utf-8"))
-        return video_id in processed.get("video_ids", [])
+        return video_id in processed.get("videos", {})
     except s3_client.exceptions.NoSuchKey:
         return False
     except Exception as e:
