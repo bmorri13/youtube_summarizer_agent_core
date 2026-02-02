@@ -106,9 +106,10 @@ resource "aws_cloudwatch_log_resource_policy" "xray_transaction_search" {
 resource "null_resource" "enable_transaction_search" {
   count = var.enable_observability ? 1 : 0
 
-  # Re-run if observability setting changes
+  # Re-run if observability setting changes or version bumped
   triggers = {
     enable_observability = var.enable_observability
+    version              = "2"  # Bump to force re-run
   }
 
   # Wait for the log resource policy to be created first
