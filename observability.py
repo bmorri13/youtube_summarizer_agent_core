@@ -1,11 +1,13 @@
-"""AWS AgentCore Observability - Tracing and Logging.
+"""AWS Bedrock AgentCore Observability - Tracing and Logging.
 
-This module provides observability features for the YouTube Analyzer Agent.
-When running in AWS Lambda with ADOT (AWS Distro for OpenTelemetry), tracing
-is automatically configured via environment variables. This module provides:
+This module provides observability features for the YouTube Analyzer Agent,
+exporting traces to AWS Bedrock AgentCore via OTLP.
+
+Features:
+- OTLP trace export to AWS (for Bedrock AgentCore dashboard)
 - CloudWatch logging via watchtower
+- gen_ai.* semantic conventions for LLM tracing
 - Custom span helpers for agent-specific tracing
-- Structured event logging for monitoring
 """
 
 import os
@@ -13,15 +15,20 @@ import logging
 import json
 from datetime import datetime
 from functools import wraps
-from typing import Callable
+from typing import Callable, Optional
 from contextlib import contextmanager
 
 import boto3
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
 
-# OpenTelemetry imports - ADOT provides the TracerProvider automatically
-from opentelemetry import trace, baggage
-from opentelemetry.context import attach, detach
+# OpenTelemetry imports
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.trace import Status, StatusCode
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
 # CloudWatch logging
 try:
@@ -36,12 +43,87 @@ SERVICE_NAME = os.environ.get("OTEL_SERVICE_NAME", "youtube-analyzer-agent")
 LOG_GROUP_NAME = os.environ.get("CLOUDWATCH_LOG_GROUP", "/aws/bedrock-agentcore/youtube-analyzer")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+OBSERVABILITY_ENABLED = os.environ.get("AGENT_OBSERVABILITY_ENABLED", "").lower() == "true"
 
-# Check if running in Lambda with ADOT (ADOT sets this)
-ADOT_ENABLED = os.environ.get("AWS_LAMBDA_EXEC_WRAPPER") == "/opt/otel-instrument"
+# OTLP endpoint for AWS
+OTLP_ENDPOINT = os.environ.get(
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    f"https://xray.{AWS_REGION}.amazonaws.com"
+)
 
-# Global logger
+# Global state
 _logger = None
+_tracer_initialized = False
+
+
+class AWSSigV4OTLPExporter(OTLPSpanExporter):
+    """OTLP Exporter with AWS SigV4 authentication."""
+
+    def __init__(self, endpoint: str, region: str = "us-east-1"):
+        self._region = region
+        self._session = boto3.Session()
+        self._credentials = self._session.get_credentials()
+        super().__init__(endpoint=endpoint)
+
+    def _get_signed_headers(self, body: bytes) -> dict:
+        """Generate SigV4 signed headers for the request."""
+        request = AWSRequest(
+            method="POST",
+            url=f"{self._endpoint}/v1/traces",
+            data=body,
+            headers={
+                "Content-Type": "application/x-protobuf",
+            }
+        )
+        SigV4Auth(self._credentials, "xray", self._region).add_auth(request)
+        return dict(request.headers)
+
+
+def _init_tracer():
+    """Initialize the OpenTelemetry tracer with OTLP export to AWS."""
+    global _tracer_initialized
+
+    if _tracer_initialized:
+        return
+
+    if not OBSERVABILITY_ENABLED:
+        print("[Observability] Tracing disabled (AGENT_OBSERVABILITY_ENABLED != true)")
+        _tracer_initialized = True
+        return
+
+    try:
+        # Create resource with service info
+        resource = Resource.create({
+            "service.name": SERVICE_NAME,
+            "service.version": "1.0.0",
+            "deployment.environment": os.environ.get("ENVIRONMENT", "prod"),
+            "cloud.provider": "aws",
+            "cloud.region": AWS_REGION,
+        })
+
+        # Create tracer provider
+        provider = TracerProvider(resource=resource)
+
+        # Configure OTLP exporter to AWS X-Ray/OTLP endpoint
+        otlp_endpoint = f"https://xray.{AWS_REGION}.amazonaws.com/v1/traces"
+
+        exporter = OTLPSpanExporter(
+            endpoint=otlp_endpoint,
+        )
+
+        # Use BatchSpanProcessor for better performance
+        processor = BatchSpanProcessor(exporter)
+        provider.add_span_processor(processor)
+
+        # Set the global tracer provider
+        trace.set_tracer_provider(provider)
+
+        print(f"[Observability] OTLP tracing enabled: {otlp_endpoint}")
+        _tracer_initialized = True
+
+    except Exception as e:
+        print(f"[Observability] Failed to initialize OTLP tracer: {e}")
+        _tracer_initialized = True
 
 
 def setup_logging() -> logging.Logger:
@@ -68,9 +150,8 @@ def setup_logging() -> logging.Logger:
     _logger.addHandler(console_handler)
 
     # CloudWatch handler for AWS deployment
-    if WATCHTOWER_AVAILABLE and (ADOT_ENABLED or os.environ.get("AGENT_OBSERVABILITY_ENABLED", "").lower() == "true"):
+    if WATCHTOWER_AVAILABLE and OBSERVABILITY_ENABLED:
         try:
-            # Create CloudWatch client with explicit region
             logs_client = boto3.client('logs', region_name=AWS_REGION)
 
             cloudwatch_handler = watchtower.CloudWatchLogHandler(
@@ -80,9 +161,7 @@ def setup_logging() -> logging.Logger:
                 create_log_group=True,
             )
             cloudwatch_handler.setLevel(logging.INFO)
-            cloudwatch_handler.setFormatter(logging.Formatter(
-                '%(message)s'
-            ))
+            cloudwatch_handler.setFormatter(logging.Formatter('%(message)s'))
             _logger.addHandler(cloudwatch_handler)
             print(f"[Observability] CloudWatch logging enabled: {LOG_GROUP_NAME}")
         except Exception as e:
@@ -92,7 +171,8 @@ def setup_logging() -> logging.Logger:
 
 
 def get_tracer() -> trace.Tracer:
-    """Get the tracer (provided by ADOT or default no-op tracer)."""
+    """Get the tracer, initializing if needed."""
+    _init_tracer()
     return trace.get_tracer(__name__, "1.0.0")
 
 
@@ -118,7 +198,8 @@ def trace_span(name: str, attributes: dict = None):
     with tracer.start_as_current_span(name) as span:
         if attributes:
             for key, value in attributes.items():
-                span.set_attribute(key, str(value))
+                if value is not None:
+                    span.set_attribute(key, str(value))
 
         logger.info(json.dumps({
             "event": "span_start",
@@ -146,13 +227,7 @@ def trace_span(name: str, attributes: dict = None):
 
 
 def trace_function(name: str = None, capture_args: bool = False):
-    """Decorator to trace a function execution.
-
-    Usage:
-        @trace_function("process_video")
-        def process_video(video_url):
-            ...
-    """
+    """Decorator to trace a function execution."""
     def decorator(func: Callable) -> Callable:
         span_name = name or func.__name__
 
@@ -182,13 +257,6 @@ def trace_function(name: str = None, capture_args: bool = False):
         return wrapper
 
     return decorator
-
-
-def set_session_id(session_id: str):
-    """Set the session ID for distributed tracing."""
-    ctx = baggage.set_baggage("session.id", session_id)
-    token = attach(ctx)
-    return token
 
 
 def log_agent_event(
@@ -246,6 +314,7 @@ def log_tool_call(tool_name: str, tool_input: dict, tool_output: dict):
     tracer = get_tracer()
 
     with tracer.start_as_current_span(f"tool.{tool_name}") as span:
+        # Standard attributes
         span.set_attribute("tool.name", tool_name)
         span.set_attribute("tool.input_keys", ",".join(tool_input.keys()))
 
@@ -267,17 +336,38 @@ def log_tool_call(tool_name: str, tool_input: dict, tool_output: dict):
         )
 
 
-def log_llm_call(model: str, input_tokens: int = None, output_tokens: int = None):
-    """Log an LLM API call."""
+def log_llm_call(
+    model: str,
+    input_tokens: int = None,
+    output_tokens: int = None,
+    request_id: str = None
+):
+    """Log an LLM API call with gen_ai semantic conventions."""
     current_span = trace.get_current_span()
+
     if current_span and current_span.get_span_context().is_valid:
+        # Gen AI semantic conventions (for Bedrock AgentCore)
+        current_span.set_attribute("gen_ai.system", "anthropic")
+        current_span.set_attribute("gen_ai.request.model", model)
+
+        if input_tokens:
+            current_span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
+            current_span.set_attribute("gen_ai.usage.prompt_tokens", input_tokens)
+        if output_tokens:
+            current_span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
+            current_span.set_attribute("gen_ai.usage.completion_tokens", output_tokens)
+        if input_tokens and output_tokens:
+            current_span.set_attribute("gen_ai.usage.total_tokens", input_tokens + output_tokens)
+
+        if request_id:
+            current_span.set_attribute("gen_ai.response.id", request_id)
+
+        # Legacy attributes for compatibility
         current_span.set_attribute("llm.model", model)
         if input_tokens:
             current_span.set_attribute("llm.input_tokens", input_tokens)
         if output_tokens:
             current_span.set_attribute("llm.output_tokens", output_tokens)
-        current_span.set_attribute("gen_ai.system", "anthropic")
-        current_span.set_attribute("gen_ai.request.model", model)
 
     log_agent_event(
         event_type="llm_call",
@@ -297,14 +387,12 @@ class AgentObservability:
         self.session_id = session_id or self._generate_session_id()
         self.tracer = get_tracer()
         self.logger = get_logger()
-        self._token = None
 
     def _generate_session_id(self) -> str:
         import uuid
         return str(uuid.uuid4())
 
     def __enter__(self):
-        self._token = set_session_id(self.session_id)
         log_agent_event("agent_session_start", metadata={"session_id": self.session_id})
         return self
 
@@ -323,13 +411,17 @@ class AgentObservability:
                 metadata={"session_id": self.session_id}
             )
 
-        if self._token:
-            detach(self._token)
+        # Flush traces before Lambda exits
+        flush_traces()
 
     @contextmanager
     def trace_agent_run(self, video_url: str):
         """Trace a complete agent run."""
         with trace_span("agent_run", {"video_url": video_url}) as span:
+            # Set gen_ai attributes for the agent span
+            span.set_attribute("gen_ai.system", "anthropic")
+            span.set_attribute("gen_ai.operation.name", "agent_run")
+
             log_agent_event("agent_start", video_url=video_url)
             try:
                 yield span
@@ -341,6 +433,9 @@ class AgentObservability:
 
 def flush_traces():
     """Force flush any pending traces."""
-    provider = trace.get_tracer_provider()
-    if hasattr(provider, 'force_flush'):
-        provider.force_flush()
+    try:
+        provider = trace.get_tracer_provider()
+        if hasattr(provider, 'force_flush'):
+            provider.force_flush(timeout_millis=5000)
+    except Exception as e:
+        print(f"[Observability] Error flushing traces: {e}")

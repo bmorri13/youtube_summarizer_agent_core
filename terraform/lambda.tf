@@ -20,9 +20,9 @@ resource "aws_lambda_function" "main" {
         # Note: AWS_REGION is automatically provided by Lambda
       },
       var.enable_observability ? {
-        # OpenTelemetry config for container-based Lambda (no layer/wrapper needed)
+        # OpenTelemetry config for OTLP export to X-Ray
         OTEL_SERVICE_NAME           = var.project_name
-        OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp.${var.aws_region}.amazonaws.com"
+        OTEL_EXPORTER_OTLP_ENDPOINT = "https://xray.${var.aws_region}.amazonaws.com"
         OTEL_TRACES_EXPORTER        = "otlp"
         OTEL_METRICS_EXPORTER       = "none"
         OTEL_LOGS_EXPORTER          = "none"
@@ -31,6 +31,9 @@ resource "aws_lambda_function" "main" {
         CLOUDWATCH_LOG_GROUP        = "/aws/bedrock-agentcore/${var.project_name}"
         LOG_LEVEL                   = "INFO"
         AGENT_OBSERVABILITY_ENABLED = "true"
+
+        # AWS Region for OTLP auth
+        AWS_REGION                  = var.aws_region
       } : {}
     )
   }
