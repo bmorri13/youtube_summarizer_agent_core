@@ -111,3 +111,24 @@ services:
     volumes:
       - ./notes:/app/notes
     command: python server.py
+
+  # Local transcript fetcher (runs on cron)
+  # Fetches transcripts locally (bypasses YouTube IP blocking) and sends to Lambda
+  fetcher:
+    build:
+      context: .
+      dockerfile: Dockerfile.fetcher
+    container_name: youtube-fetcher
+    environment:
+      - MONITOR_CHANNEL_URLS=${MONITOR_CHANNEL_URLS}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - LAMBDA_FUNCTION_NAME=${LAMBDA_FUNCTION_NAME:-youtube-analyzer}
+      - NOTES_S3_BUCKET=${NOTES_S3_BUCKET}
+    volumes:
+      - fetcher-logs:/var/log
+    restart: unless-stopped
+
+volumes:
+  fetcher-logs:

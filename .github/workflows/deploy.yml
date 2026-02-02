@@ -351,12 +351,87 @@ jobs:
           echo "Lambda invocation successful" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================
+  # Job 7: Deploy Fetcher to Home Server via Tailscale
+  # ===========================================
+  deploy-fetcher:
+    name: Deploy Transcript Fetcher
+    runs-on: ubuntu-latest
+    needs: [terraform-apply]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Deploy to home server
+        env:
+          TS_SSH_HOST: ${{ secrets.TS_SSH_HOST }}
+          TS_SSH_USER: ${{ secrets.TS_SSH_USER }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+          NOTES_S3_BUCKET: ${{ secrets.NOTES_S3_BUCKET }}
+          MONITOR_CHANNEL_URLS: ${{ secrets.MONITOR_CHANNEL_URLS }}
+          LAMBDA_FUNCTION_NAME: youtube-analyzer
+        run: |
+          # Create deployment directory
+          ssh -o StrictHostKeyChecking=no ${TS_SSH_USER}@${TS_SSH_HOST} "mkdir -p /opt/docker/yt-transcript"
+
+          # Copy files to remote
+          scp -o StrictHostKeyChecking=no -r \
+            Dockerfile.fetcher \
+            docker-compose.yml \
+            requirements.txt \
+            local_fetcher.py \
+            tools/ \
+            ${TS_SSH_USER}@${TS_SSH_HOST}:/opt/docker/yt-transcript/
+
+          # Create .env file on remote
+          ssh -o StrictHostKeyChecking=no ${TS_SSH_USER}@${TS_SSH_HOST} "cat > /opt/docker/yt-transcript/.env << 'EOF'
+          MONITOR_CHANNEL_URLS=${MONITOR_CHANNEL_URLS}
+          AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+          AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+          AWS_REGION=${AWS_REGION}
+          LAMBDA_FUNCTION_NAME=${LAMBDA_FUNCTION_NAME}
+          NOTES_S3_BUCKET=${NOTES_S3_BUCKET}
+          EOF"
+
+          # Build and restart container
+          ssh -o StrictHostKeyChecking=no ${TS_SSH_USER}@${TS_SSH_HOST} "
+            cd /opt/docker/yt-transcript && \
+            docker compose build fetcher && \
+            docker compose up -d fetcher
+          "
+
+      - name: Verify deployment
+        env:
+          TS_SSH_HOST: ${{ secrets.TS_SSH_HOST }}
+          TS_SSH_USER: ${{ secrets.TS_SSH_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=no ${TS_SSH_USER}@${TS_SSH_HOST} "
+            docker ps | grep youtube-fetcher && echo 'Fetcher container is running'
+          "
+
+      - name: Summary
+        run: |
+          echo "## Fetcher Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "**Host:** ${{ secrets.TS_SSH_HOST }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Path:** /opt/docker/yt-transcript" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================
   # Final Summary
   # ===========================================
   summary:
     name: Deployment Summary
     runs-on: ubuntu-latest
-    needs: [terraform-plan, terraform-ecr, build, terraform-apply, deploy-lambda, smoke-test]
+    needs: [terraform-plan, terraform-ecr, build, terraform-apply, deploy-lambda, smoke-test, deploy-fetcher]
     if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
 
     steps:
@@ -372,6 +447,7 @@ jobs:
           echo "| Terraform Apply | ${{ needs.terraform-apply.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Deploy Lambda | ${{ needs.deploy-lambda.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Smoke Test | ${{ needs.smoke-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy Fetcher | ${{ needs.deploy-fetcher.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "**Actor:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

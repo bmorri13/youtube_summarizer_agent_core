@@ -251,6 +251,148 @@ def run_agent(video_url: str, max_turns: int = 10, session_id: str = None) -> st
             return final_response
 
 
+def run_agent_with_transcript(
+    video_url: str,
+    video_id: str,
+    video_title: str,
+    channel_name: str,
+    transcript: str,
+    channel_id: str = None,
+    max_turns: int = 10,
+    session_id: str = None
+) -> str:
+    """Run agent with a pre-fetched transcript (skip transcript fetching step).
+
+    This is used when the local fetcher has already fetched the transcript
+    to bypass YouTube IP blocking.
+
+    Args:
+        video_url: URL of the YouTube video
+        video_id: YouTube video ID
+        video_title: Title of the video
+        channel_name: Name of the YouTube channel
+        transcript: Pre-fetched transcript text
+        channel_id: Optional YouTube channel ID
+        max_turns: Maximum number of agent turns
+        session_id: Optional session ID for tracing
+
+    Returns:
+        Agent's final response text
+    """
+    logger = get_logger()
+    session_id = session_id or str(uuid.uuid4())
+
+    # Create a modified system prompt that includes the transcript
+    system_prompt_with_transcript = f"""{SYSTEM_PROMPT}
+
+IMPORTANT: The transcript has already been fetched for you. Here is the video information:
+
+Video URL: {video_url}
+Video ID: {video_id}
+Video Title: {video_title}
+Channel: {channel_name}
+{f'Channel ID: {channel_id}' if channel_id else ''}
+
+TRANSCRIPT:
+{transcript}
+
+Since the transcript is already provided above, DO NOT use the get_transcript tool.
+Proceed directly to:
+1. Analyze and summarize the content
+2. Save notes using save_note tool (include video_id: {video_id}{f', channel_id: {channel_id}' if channel_id else ''}, channel_name: {channel_name})
+3. Send Slack notification using send_slack_notification tool
+"""
+
+    # Use observability context
+    with AgentObservability(session_id=session_id) as obs:
+        with obs.trace_agent_run(video_url):
+            client = anthropic.Anthropic()
+            model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+
+            messages = [
+                {"role": "user", "content": f"Please analyze this YouTube video: {video_url}"}
+            ]
+
+            final_response = ""
+            total_input_tokens = 0
+            total_output_tokens = 0
+
+            for turn in range(max_turns):
+                with trace_span(f"llm_turn_{turn}", {"turn": turn, "model": model}):
+                    logger.info(f"Agent turn {turn + 1}/{max_turns} (pre-fetched transcript)")
+
+                    response = client.messages.create(
+                        model=model,
+                        max_tokens=4096,
+                        system=system_prompt_with_transcript,
+                        tools=ALL_TOOLS,
+                        messages=messages
+                    )
+
+                    # Track token usage
+                    input_tokens = getattr(response.usage, 'input_tokens', 0)
+                    output_tokens = getattr(response.usage, 'output_tokens', 0)
+                    total_input_tokens += input_tokens
+                    total_output_tokens += output_tokens
+
+                    log_llm_call(model, input_tokens, output_tokens)
+
+                    # Check if we're done (no more tool use)
+                    if response.stop_reason == "end_turn":
+                        for block in response.content:
+                            if block.type == "text":
+                                final_response += block.text
+                        logger.info(f"Agent completed after {turn + 1} turns")
+                        break
+
+                    # Process the response
+                    assistant_content = []
+                    tool_results = []
+
+                    for block in response.content:
+                        if block.type == "text":
+                            final_response += block.text
+                            assistant_content.append({"type": "text", "text": block.text})
+                        elif block.type == "tool_use":
+                            assistant_content.append({
+                                "type": "tool_use",
+                                "id": block.id,
+                                "name": block.name,
+                                "input": block.input
+                            })
+
+                            # Execute the tool
+                            result = handle_tool_call(block.name, block.input)
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": result
+                            })
+
+                    # Add assistant message and tool results to conversation
+                    messages.append({"role": "assistant", "content": assistant_content})
+
+                    if tool_results:
+                        messages.append({"role": "user", "content": tool_results})
+                    else:
+                        break
+
+            # Log final metrics
+            log_agent_event(
+                "agent_metrics",
+                video_url=video_url,
+                metadata={
+                    "total_turns": turn + 1,
+                    "total_input_tokens": total_input_tokens,
+                    "total_output_tokens": total_output_tokens,
+                    "session_id": session_id,
+                    "prefetched_transcript": True,
+                }
+            )
+
+            return final_response
+
+
 def main():
     """CLI entry point."""
     logger = get_logger()

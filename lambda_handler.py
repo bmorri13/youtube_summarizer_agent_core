@@ -9,7 +9,7 @@ load_dotenv()
 from opentelemetry import trace
 from observability import get_logger, log_agent_event
 
-from agent import run_agent
+from agent import run_agent, run_agent_with_transcript
 
 logger = get_logger()
 
@@ -55,6 +55,10 @@ def handler(event, context):
         "faas.trigger": trigger_type,
     }) as span:
         try:
+            # Handle pre-fetched transcript from local fetcher
+            if isinstance(event, dict) and event.get("process_transcript"):
+                return _process_prefetched_transcript(event)
+
             video_url = None
             channel_url = None
             channel_urls = None
@@ -123,6 +127,73 @@ def handler(event, context):
         except Exception as e:
             log_agent_event("lambda_error", status="error", error=str(e))
             raise
+
+
+def _process_prefetched_transcript(event: dict) -> dict:
+    """Process a transcript that was pre-fetched by local fetcher.
+
+    Args:
+        event: Event containing video info and transcript from local fetcher
+
+    Returns:
+        Lambda response dict
+    """
+    tracer = trace.get_tracer(__name__)
+
+    video_url = event["video_url"]
+    video_title = event["video_title"]
+    video_id = event["video_id"]
+    channel_id = event.get("channel_id")
+    channel_name = event["channel_name"]
+    transcript = event["transcript"]
+
+    with tracer.start_as_current_span("process_prefetched_transcript", attributes={
+        "video_url": video_url,
+        "video_id": video_id,
+        "source": "local_fetcher",
+        "transcript_length": len(transcript),
+    }):
+        log_agent_event(
+            "prefetched_transcript",
+            video_url=video_url,
+            video_id=video_id,
+            metadata={"source": "local_fetcher", "transcript_length": len(transcript)}
+        )
+
+        try:
+            result = run_agent_with_transcript(
+                video_url=video_url,
+                video_id=video_id,
+                video_title=video_title,
+                channel_id=channel_id,
+                channel_name=channel_name,
+                transcript=transcript
+            )
+
+            log_agent_event(
+                "prefetched_success",
+                video_url=video_url,
+                video_id=video_id,
+            )
+
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"success": True, "result": result})
+            }
+        except Exception as e:
+            log_agent_event(
+                "prefetched_error",
+                video_url=video_url,
+                video_id=video_id,
+                status="error",
+                error=str(e)
+            )
+            return {
+                "statusCode": 500,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"success": False, "error": str(e)})
+            }
 
 
 def _process_single_url(url: str, url_type: str) -> dict:
