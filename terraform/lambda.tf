@@ -31,9 +31,6 @@ resource "aws_lambda_function" "main" {
         CLOUDWATCH_LOG_GROUP        = "/aws/bedrock-agentcore/${var.project_name}"
         LOG_LEVEL                   = "INFO"
         AGENT_OBSERVABILITY_ENABLED = "true"
-
-        # AWS Region for OTLP auth
-        AWS_REGION                  = var.aws_region
       } : {}
     )
   }
