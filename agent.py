@@ -282,6 +282,12 @@ def run_agent_with_transcript(
     logger = get_logger()
     session_id = session_id or str(uuid.uuid4())
 
+    # Filter out get_transcript tool since transcript is already provided
+    tools_without_transcript = [
+        tool for tool in ALL_TOOLS
+        if tool["name"] != "get_transcript"
+    ]
+
     # Create a modified system prompt that includes the transcript
     system_prompt_with_transcript = f"""{SYSTEM_PROMPT}
 
@@ -325,7 +331,7 @@ Proceed directly to:
                         model=model,
                         max_tokens=4096,
                         system=system_prompt_with_transcript,
-                        tools=ALL_TOOLS,
+                        tools=tools_without_transcript,
                         messages=messages
                     )
 
