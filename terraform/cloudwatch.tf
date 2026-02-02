@@ -64,3 +64,65 @@ resource "aws_cloudwatch_metric_alarm" "throttles" {
 
   alarm_actions = [aws_sns_topic.alarms[0].arn]
 }
+
+# =============================================================================
+# Transaction Search / Application Signals Configuration
+# Enables trace visibility in CloudWatch Application Signals / AgentCore
+# =============================================================================
+
+# CloudWatch Logs resource policy to allow X-Ray to write spans
+resource "aws_cloudwatch_log_resource_policy" "xray_transaction_search" {
+  count       = var.enable_observability ? 1 : 0
+  policy_name = "${var.project_name}-xray-transaction-search"
+
+  policy_document = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "TransactionSearchXRayAccess"
+        Effect = "Allow"
+        Principal = {
+          Service = "xray.amazonaws.com"
+        }
+        Action   = "logs:PutLogEvents"
+        Resource = [
+          "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:aws/spans:*",
+          "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/application-signals/data:*"
+        ]
+        Condition = {
+          ArnLike = {
+            "aws:SourceArn" = "arn:aws:xray:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*"
+          }
+          StringEquals = {
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+        }
+      }
+    ]
+  })
+}
+
+# Enable Transaction Search via AWS CLI (no native Terraform resource yet)
+resource "null_resource" "enable_transaction_search" {
+  count = var.enable_observability ? 1 : 0
+
+  # Re-run if observability setting changes
+  triggers = {
+    enable_observability = var.enable_observability
+  }
+
+  # Wait for the log resource policy to be created first
+  depends_on = [aws_cloudwatch_log_resource_policy.xray_transaction_search]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      # Enable CloudWatch Logs as trace destination
+      aws xray update-trace-segment-destination --destination CloudWatchLogs --region ${var.aws_region} || true
+
+      # Set indexing to 1% (free tier)
+      aws xray update-indexing-rule --name "Default" --rule '{"Probabilistic": {"DesiredSamplingPercentage": 1}}' --region ${var.aws_region} || true
+
+      echo "Transaction Search enabled for region ${var.aws_region}"
+    EOT
+  }
+}
