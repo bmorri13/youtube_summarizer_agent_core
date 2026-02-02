@@ -95,11 +95,48 @@ def _fetch_channel_id_from_page(channel_url: str) -> str:
         raise ValueError(f"Failed to fetch channel page: {e}")
 
 
-def get_latest_channel_video(channel_url: str) -> dict:
-    """Fetch the latest video from a YouTube channel using RSS feed.
+def _get_video_duration(video_id: str) -> int:
+    """Fetch video duration in seconds from YouTube.
+
+    Args:
+        video_id: YouTube video ID
+
+    Returns:
+        Duration in seconds, or 0 if unable to determine
+    """
+    try:
+        # Fetch video page and look for duration in metadata
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        # Look for duration in various formats
+        # Pattern 1: "lengthSeconds":"123"
+        match = re.search(r'"lengthSeconds":"(\d+)"', response.text)
+        if match:
+            return int(match.group(1))
+
+        # Pattern 2: "approxDurationMs":"123000"
+        match = re.search(r'"approxDurationMs":"(\d+)"', response.text)
+        if match:
+            return int(match.group(1)) // 1000
+
+        return 0
+    except Exception:
+        return 0
+
+
+def get_latest_channel_video(channel_url: str, min_duration_seconds: int = 90) -> dict:
+    """Fetch the latest full-length video from a YouTube channel using RSS feed.
+
+    Skips YouTube Shorts (videos under min_duration_seconds).
 
     Args:
         channel_url: YouTube channel URL
+        min_duration_seconds: Minimum video duration to consider (default 90s to skip Shorts)
 
     Returns:
         dict with:
@@ -110,6 +147,7 @@ def get_latest_channel_video(channel_url: str) -> dict:
             - published: str (if successful, ISO format)
             - channel_id: str (if successful)
             - channel_name: str (if successful)
+            - duration_seconds: int (if successful)
             - is_already_processed: bool (if successful)
             - error: str (if failed)
     """
@@ -142,43 +180,54 @@ def get_latest_channel_video(channel_url: str) -> dict:
         channel_name = root.find('atom:title', namespaces)
         channel_name = channel_name.text if channel_name is not None else "Unknown Channel"
 
-        # Get first (latest) entry
-        entry = root.find('atom:entry', namespaces)
-        if entry is None:
+        # Get all entries and find the first non-Short video
+        entries = root.findall('atom:entry', namespaces)
+        if not entries:
             return {
                 "success": False,
                 "error": "No videos found in channel feed"
             }
 
-        # Extract video info
-        video_id_elem = entry.find('yt:videoId', namespaces)
-        title_elem = entry.find('atom:title', namespaces)
-        published_elem = entry.find('atom:published', namespaces)
+        for entry in entries:
+            video_id_elem = entry.find('yt:videoId', namespaces)
+            if video_id_elem is None:
+                continue
 
-        if video_id_elem is None:
+            video_id = video_id_elem.text
+
+            # Check video duration to filter out Shorts
+            duration = _get_video_duration(video_id)
+            if duration > 0 and duration < min_duration_seconds:
+                # This is likely a Short, skip it
+                continue
+
+            title_elem = entry.find('atom:title', namespaces)
+            published_elem = entry.find('atom:published', namespaces)
+
+            title = title_elem.text if title_elem is not None else "Unknown Title"
+            published = published_elem.text if published_elem is not None else None
+
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
+
+            # Check if already processed
+            already_processed = is_video_processed(video_id)
+
             return {
-                "success": False,
-                "error": "Could not parse video ID from feed"
+                "success": True,
+                "video_id": video_id,
+                "video_url": video_url,
+                "title": title,
+                "published": published,
+                "channel_id": channel_id,
+                "channel_name": channel_name,
+                "duration_seconds": duration,
+                "is_already_processed": already_processed
             }
 
-        video_id = video_id_elem.text
-        title = title_elem.text if title_elem is not None else "Unknown Title"
-        published = published_elem.text if published_elem is not None else None
-
-        video_url = f"https://www.youtube.com/watch?v={video_id}"
-
-        # Check if already processed
-        already_processed = is_video_processed(video_id)
-
+        # All videos in feed were Shorts
         return {
-            "success": True,
-            "video_id": video_id,
-            "video_url": video_url,
-            "title": title,
-            "published": published,
-            "channel_id": channel_id,
-            "channel_name": channel_name,
-            "is_already_processed": already_processed
+            "success": False,
+            "error": f"No full-length videos found (all {len(entries)} videos were under {min_duration_seconds}s)"
         }
 
     except ValueError as e:
