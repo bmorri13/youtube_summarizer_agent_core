@@ -59,12 +59,11 @@ jobs:
 
       - name: Terraform Plan
         working-directory: terraform/backend-bootstrap
-        run: |
-          terraform plan \
-            -var="github_org=${{ inputs.github_org }}" \
-            -var="github_repo=${{ inputs.github_repo }}" \
-            -var="aws_region=${{ inputs.aws_region }}" \
-            -out=tfplan
+        env:
+          TF_VAR_github_org: ${{ inputs.github_org }}
+          TF_VAR_github_repo: ${{ inputs.github_repo }}
+          TF_VAR_aws_region: ${{ inputs.aws_region }}
+        run: terraform plan -out=tfplan
 
       - name: Terraform Apply
         working-directory: terraform/backend-bootstrap

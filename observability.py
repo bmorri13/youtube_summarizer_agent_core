@@ -8,14 +8,16 @@ Features:
 - CloudWatch logging via watchtower
 - gen_ai.* semantic conventions for LLM tracing
 - Custom span helpers for agent-specific tracing
+- Log injection prevention via input sanitization
 """
 
 import os
 import logging
 import json
+import re
 from datetime import datetime
 from functools import wraps
-from typing import Callable, Optional
+from typing import Callable, Optional, Any
 from contextlib import contextmanager
 
 import boto3
@@ -54,6 +56,76 @@ OTLP_ENDPOINT = os.environ.get(
 # Global state
 _logger = None
 _tracer_initialized = False
+
+
+def sanitize_log_value(value: Any, max_length: int = 1000) -> str:
+    """Sanitize a value for safe logging to prevent log injection attacks.
+
+    This function:
+    - Converts value to string
+    - Removes/escapes control characters (newlines, carriage returns, tabs)
+    - Truncates overly long strings
+    - Escapes characters that could forge log entries
+
+    Args:
+        value: The value to sanitize
+        max_length: Maximum length of the output string
+
+    Returns:
+        A sanitized string safe for logging
+    """
+    if value is None:
+        return "null"
+
+    # Convert to string
+    str_value = str(value)
+
+    # Remove or escape control characters that could forge log entries
+    # Replace newlines and carriage returns with escaped versions
+    str_value = str_value.replace('\r\n', '\\r\\n')
+    str_value = str_value.replace('\n', '\\n')
+    str_value = str_value.replace('\r', '\\r')
+    str_value = str_value.replace('\t', '\\t')
+
+    # Remove other control characters (ASCII 0-31 except those already handled)
+    str_value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', str_value)
+
+    # Truncate if too long
+    if len(str_value) > max_length:
+        str_value = str_value[:max_length] + "...[truncated]"
+
+    return str_value
+
+
+def sanitize_log_dict(data: dict, max_length: int = 1000) -> dict:
+    """Recursively sanitize all string values in a dictionary for logging.
+
+    Args:
+        data: Dictionary to sanitize
+        max_length: Maximum length for string values
+
+    Returns:
+        A new dictionary with sanitized values
+    """
+    if not isinstance(data, dict):
+        return data
+
+    sanitized = {}
+    for key, value in data.items():
+        if isinstance(value, str):
+            sanitized[key] = sanitize_log_value(value, max_length)
+        elif isinstance(value, dict):
+            sanitized[key] = sanitize_log_dict(value, max_length)
+        elif isinstance(value, list):
+            sanitized[key] = [
+                sanitize_log_value(item, max_length) if isinstance(item, str)
+                else sanitize_log_dict(item, max_length) if isinstance(item, dict)
+                else item
+                for item in value
+            ]
+        else:
+            sanitized[key] = value
+    return sanitized
 
 
 class AWSSigV4OTLPExporter(OTLPSpanExporter):
@@ -197,10 +269,12 @@ def trace_span(name: str, attributes: dict = None):
                 if value is not None:
                     span.set_attribute(key, str(value))
 
+        # Sanitize attributes to prevent log injection
+        safe_attributes = sanitize_log_dict(attributes) if attributes else {}
         logger.info(json.dumps({
             "event": "span_start",
-            "span_name": name,
-            "attributes": attributes or {}
+            "span_name": sanitize_log_value(name),
+            "attributes": safe_attributes
         }))
 
         try:
@@ -208,7 +282,7 @@ def trace_span(name: str, attributes: dict = None):
             span.set_status(Status(StatusCode.OK))
             logger.info(json.dumps({
                 "event": "span_end",
-                "span_name": name,
+                "span_name": sanitize_log_value(name),
                 "status": "OK"
             }))
         except Exception as e:
@@ -216,8 +290,8 @@ def trace_span(name: str, attributes: dict = None):
             span.record_exception(e)
             logger.error(json.dumps({
                 "event": "span_error",
-                "span_name": name,
-                "error": str(e)
+                "span_name": sanitize_log_value(name),
+                "error": sanitize_log_value(str(e))
             }))
             raise
 
@@ -270,26 +344,27 @@ def log_agent_event(
     logger = get_logger()
 
     event = {
-        "event_type": event_type,
+        "event_type": sanitize_log_value(event_type),
         "timestamp": datetime.utcnow().isoformat() + "Z",
-        "status": status,
+        "status": sanitize_log_value(status),
         "service": SERVICE_NAME,
     }
 
+    # Sanitize all user-controlled input to prevent log injection
     if video_url:
-        event["video_url"] = video_url
+        event["video_url"] = sanitize_log_value(video_url)
     if video_id:
-        event["video_id"] = video_id
+        event["video_id"] = sanitize_log_value(video_id)
     if channel_url:
-        event["channel_url"] = channel_url
+        event["channel_url"] = sanitize_log_value(channel_url)
     if is_already_processed is not None:
         event["is_already_processed"] = is_already_processed
     if tool_name:
-        event["tool_name"] = tool_name
+        event["tool_name"] = sanitize_log_value(tool_name)
     if error:
-        event["error"] = error
+        event["error"] = sanitize_log_value(error)
     if metadata:
-        event["metadata"] = metadata
+        event["metadata"] = sanitize_log_dict(metadata)
 
     # Get current span context if available
     current_span = trace.get_current_span()

@@ -25,6 +25,7 @@ from observability import (
     log_tool_call,
     log_llm_call,
     get_logger,
+    sanitize_log_value,
 )
 
 # Load environment variables
@@ -80,8 +81,10 @@ def handle_tool_call(tool_name: str, tool_input: dict) -> str:
     """Execute a tool and return the result as a string."""
     logger = get_logger()
 
-    with trace_span(f"tool.{tool_name}", {"tool_name": tool_name}):
-        logger.info(f"Executing tool: {tool_name}")
+    # Sanitize tool_name for logging to prevent log injection
+    safe_tool_name = sanitize_log_value(tool_name)
+    with trace_span(f"tool.{safe_tool_name}", {"tool_name": safe_tool_name}):
+        logger.info(f"Executing tool: {safe_tool_name}")
 
         if tool_name == "get_transcript":
             result = get_transcript(tool_input["video_url"])
