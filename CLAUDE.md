@@ -81,7 +81,6 @@ Located in `terraform/`:
 - `lambda.tf` - Lambda function with OTEL environment variables
 - `iam.tf` - IAM roles for Lambda, S3, X-Ray, CloudWatch
 - `cloudwatch.tf` - Log groups and Transaction Search resource policy
-- `eventbridge.tf` - Scheduled triggers for channel monitoring
 - `s3.tf` - Notes storage bucket
 
 Key variable: `enable_observability` controls ADOT/AgentCore tracing setup.

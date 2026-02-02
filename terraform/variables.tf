@@ -53,18 +53,6 @@ variable "monitor_channel_urls" {
   default     = ""
 }
 
-variable "schedule_expression" {
-  description = "EventBridge schedule expression for monitoring"
-  type        = string
-  default     = "rate(1 hour)"
-}
-
-variable "enable_scheduled_monitoring" {
-  description = "Enable scheduled channel monitoring"
-  type        = bool
-  default     = false
-}
-
 variable "enable_observability" {
   description = "Enable OpenTelemetry tracing and CloudWatch custom logging"
   type        = bool

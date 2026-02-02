@@ -16,6 +16,28 @@ Built with:
 - 📊 Full observability via CloudWatch GenAI dashboard
 - 🐳 Docker support for local development and Lambda deployment
 
+## Architecture
+
+![YouTube Analyzer Architecture](diagram/youtube_analyzer_architecture.png)
+
+### Hybrid Fetcher Architecture
+
+YouTube blocks transcript requests from cloud IPs (AWS, GCP, etc.). This project uses a hybrid architecture to work around this limitation:
+
+1. **Local Fetcher (Home Server)**: A Docker container running on a home server with a residential IP address. It runs on a cron schedule (every 30 minutes via Supercronic) to:
+   - Fetch the latest videos from monitored YouTube channels
+   - Check S3 for already-processed videos to avoid duplicates
+   - Fetch transcripts using the residential IP (bypasses YouTube's cloud IP blocking)
+   - Invoke the Lambda function with the pre-fetched transcript
+
+2. **AWS Lambda**: Receives the pre-fetched transcript and runs the AI analysis pipeline:
+   - Calls Claude API for summarization
+   - Saves notes to S3
+   - Sends Slack notifications
+   - Exports traces to X-Ray/CloudWatch for observability
+
+This architecture separates the "fetching" concern (which requires residential IP) from the "processing" concern (which can run anywhere), allowing the AI processing to scale in the cloud while still accessing YouTube transcripts reliably.
+
 ## Project Structure
 
 ```
