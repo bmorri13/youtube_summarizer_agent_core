@@ -29,6 +29,10 @@ resource "aws_lambda_function" "main" {
         OTEL_METRICS_EXPORTER         = "none"
         OTEL_LOGS_EXPORTER            = "none"
 
+        # Required by AWS docs for AgentCore Observability
+        OTEL_RESOURCE_ATTRIBUTES        = "service.name=${var.project_name}"
+        OTEL_EXPORTER_OTLP_LOGS_HEADERS = "x-aws-log-group=/aws/bedrock-agentcore/${var.project_name},x-aws-log-stream=runtime-logs,x-aws-metric-namespace=bedrock-agentcore"
+
         # CloudWatch logging
         CLOUDWATCH_LOG_GROUP          = "/aws/bedrock-agentcore/${var.project_name}"
         LOG_LEVEL                     = "INFO"

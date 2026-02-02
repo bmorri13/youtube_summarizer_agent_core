@@ -26,5 +26,6 @@ COPY tools/ ./tools/
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Default command for Lambda (ADOT wraps via env vars)
-CMD ["lambda_handler.handler"]
+# Use opentelemetry-instrument wrapper for ADOT auto-instrumentation
+ENTRYPOINT ["opentelemetry-instrument"]
+CMD ["python", "-m", "awslambdaric", "lambda_handler.handler"]
