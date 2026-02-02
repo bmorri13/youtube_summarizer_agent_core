@@ -26,6 +26,9 @@ curl -X POST "http://localhost:9000/2015-03-31/functions/function/invocations" \
 
 # Terraform deployment
 cd terraform && terraform init && terraform apply
+
+# Manually trigger local fetcher (requires Tailscale access to home server)
+ssh root@docker-compose-03 "cd /opt/docker/yt-transcript && docker compose run --rm fetcher python local_fetcher.py"
 ```
 
 ## Architecture
@@ -46,6 +49,8 @@ YouTube blocks transcript requests from cloud IPs. The solution:
 3. **Deployment**: GitHub Actions deploys fetcher to home server via Tailscale SSH (see `.github/workflows/deploy.yml`)
 
 The `process_transcript: true` flag in Lambda events indicates a pre-fetched transcript from the local fetcher.
+
+**Important**: When `run_agent_with_transcript()` is called, the `get_transcript` tool is filtered out of the available tools list. This prevents the LLM from attempting to re-fetch the transcript (which would fail due to IP blocking). Prompt instructions alone were unreliable—removing the tool entirely is the robust solution.
 
 ### Adding New Tools
 1. Create `tools/my_tool.py` with:
