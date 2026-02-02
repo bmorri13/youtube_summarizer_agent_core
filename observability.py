@@ -80,7 +80,7 @@ class AWSSigV4OTLPExporter(OTLPSpanExporter):
 
 
 def _init_tracer():
-    """Initialize the OpenTelemetry tracer with OTLP export to AWS."""
+    """Initialize the OpenTelemetry tracer using AWS ADOT auto-configuration."""
     global _tracer_initialized
 
     if _tracer_initialized:
@@ -92,7 +92,17 @@ def _init_tracer():
         return
 
     try:
-        # Create resource with service info
+        # Check if ADOT auto-configuration is available
+        # When OTEL_PYTHON_DISTRO=aws_distro is set, ADOT handles everything
+        if os.environ.get("OTEL_PYTHON_DISTRO") == "aws_distro":
+            print("[Observability] Using AWS ADOT auto-configuration for AgentCore")
+            _tracer_initialized = True
+            return
+
+        # Fallback: Manual configuration for local development
+        from opentelemetry.sdk.resources import Resource
+        from opentelemetry.sdk.trace import TracerProvider
+
         resource = Resource.create({
             "service.name": SERVICE_NAME,
             "service.version": "1.0.0",
@@ -101,28 +111,14 @@ def _init_tracer():
             "cloud.region": AWS_REGION,
         })
 
-        # Create tracer provider
         provider = TracerProvider(resource=resource)
-
-        # Configure OTLP exporter to AWS X-Ray/OTLP endpoint
-        otlp_endpoint = f"https://xray.{AWS_REGION}.amazonaws.com/v1/traces"
-
-        exporter = OTLPSpanExporter(
-            endpoint=otlp_endpoint,
-        )
-
-        # Use BatchSpanProcessor for better performance
-        processor = BatchSpanProcessor(exporter)
-        provider.add_span_processor(processor)
-
-        # Set the global tracer provider
         trace.set_tracer_provider(provider)
 
-        print(f"[Observability] OTLP tracing enabled: {otlp_endpoint}")
+        print("[Observability] Manual tracer configuration (no ADOT)")
         _tracer_initialized = True
 
     except Exception as e:
-        print(f"[Observability] Failed to initialize OTLP tracer: {e}")
+        print(f"[Observability] Failed to initialize tracer: {e}")
         _tracer_initialized = True
 
 
