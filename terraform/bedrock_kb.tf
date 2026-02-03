@@ -19,6 +19,15 @@ resource "aws_s3vectors_index" "notes_index" {
 
   # Cosine similarity for semantic search
   distance_metric = "cosine"
+
+  # Move Bedrock metadata to non-filterable storage (40KB limit vs 2KB filterable limit)
+  # This prevents "Filterable metadata must have at most 2048 bytes" errors
+  metadata_configuration {
+    non_filterable_metadata_keys = [
+      "AMAZON_BEDROCK_TEXT",
+      "AMAZON_BEDROCK_METADATA"
+    ]
+  }
 }
 
 # IAM Role for Bedrock Knowledge Base
