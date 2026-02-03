@@ -19,7 +19,6 @@ from diagrams.aws.compute import ECR
 from diagrams.onprem.container import Docker
 from diagrams.onprem.client import User
 from diagrams.saas.chat import Slack
-from diagrams.custom import Custom
 import os
 
 # Get the directory where this script is located
@@ -34,8 +33,13 @@ with Diagram(
     graph_attr={
         "fontsize": "20",
         "bgcolor": "white",
-        "pad": "0.5",
-        "splines": "ortho",
+        "pad": "1.0",
+        "nodesep": "1.0",
+        "ranksep": "1.5",
+        "splines": "spline",
+    },
+    edge_attr={
+        "fontsize": "10",
     },
 ):
     # External Services
@@ -63,33 +67,28 @@ with Diagram(
             cloudwatch = Cloudwatch("CloudWatch\nLogs")
             xray = XRay("X-Ray\nTraces")
 
-
     # Data Flow - Local Fetcher Path
     # 1. Supercronic triggers local_fetcher every 30 min
     # 2. Local fetcher queries YouTube for latest videos
-    fetcher >> Edge(label="1. Fetch\nVideos", color="blue") >> youtube
+    fetcher >> Edge(label="1. Fetch Videos", color="blue") >> youtube
 
     # 3. Local fetcher checks S3 for already processed videos
-    fetcher >> Edge(label="2. Check\nProcessed", color="gray", style="dashed") >> s3
+    fetcher >> Edge(label="2. Check Processed", color="gray", style="dashed") >> s3
 
-    # 4. Local fetcher fetches transcript (residential IP bypasses blocking)
-    # (This happens via YouTube API, same as step 2)
-
-    # 5. Local fetcher invokes Lambda with pre-fetched transcript
-    fetcher >> Edge(label="3. Invoke with\nTranscript", color="green") >> lambda_fn
+    # 4. Local fetcher invokes Lambda with pre-fetched transcript
+    fetcher >> Edge(label="3. Invoke + Transcript", color="green") >> lambda_fn
 
     # AWS Infrastructure
     ecr >> Edge(label="Deploy", color="purple", style="dashed") >> lambda_fn
 
     # Lambda processing
     lambda_fn >> Edge(label="4. Analyze", color="orange") >> anthropic
-    lambda_fn >> Edge(label="5. Save\nNotes", color="blue") >> s3
+    lambda_fn >> Edge(label="5. Save Notes", color="blue") >> s3
     lambda_fn >> Edge(label="6. Notify", color="green") >> slack
 
-    # Observability
+    # Observability (no labels to reduce clutter)
     lambda_fn >> Edge(color="gray", style="dashed") >> cloudwatch
     lambda_fn >> Edge(color="gray", style="dashed") >> xray
-
 
 
 if __name__ == "__main__":
