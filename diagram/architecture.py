@@ -29,25 +29,26 @@ with Diagram(
     "YouTube Analyzer Architecture",
     filename=os.path.join(SCRIPT_DIR, "youtube_analyzer_architecture"),
     show=False,
-    direction="TB",
+    direction="LR",
     graph_attr={
         "fontsize": "20",
         "bgcolor": "white",
         "pad": "1.0",
         "nodesep": "0.8",
         "ranksep": "1.2",
-        "splines": "ortho",
+        "splines": "spline",
     },
     edge_attr={
         "fontsize": "10",
+        "fontname": "Helvetica-Bold",
     },
 ):
-    # Home Server (On-Premises)
+    # Home Server (source)
     with Cluster("Home Server (On-Premises)"):
         with Cluster("Docker Container"):
             fetcher = Docker("local_fetcher.py\n(Supercronic)")
 
-    # AWS Cloud
+    # AWS Cloud (processing)
     with Cluster("AWS Cloud"):
         ecr = ECR("ECR")
 
@@ -61,24 +62,24 @@ with Diagram(
             cloudwatch = Cloudwatch("CloudWatch\nLogs")
             xray = XRay("X-Ray\nTraces")
 
-    # External Services
+    # External Services (destinations)
     with Cluster("External Services"):
         youtube = User("YouTube API")
         anthropic = User("Anthropic\nClaude API")
         slack = Slack("Slack\nWebhook")
 
     # Data Flow - Local Fetcher Path
-    fetcher >> Edge(label="1. Fetch Videos", color="blue", minlen="2") >> youtube
-    fetcher >> Edge(label="2. Check Processed", color="gray", style="dashed", minlen="2") >> s3
-    fetcher >> Edge(label="3. Invoke", color="green", minlen="2") >> lambda_fn
+    fetcher >> Edge(label="1. Fetch Videos", color="blue") >> youtube
+    fetcher >> Edge(label="2. Check Processed", color="gray", style="dashed") >> s3
+    fetcher >> Edge(label="3. Invoke", color="green") >> lambda_fn
 
     # AWS Infrastructure
     ecr >> Edge(label="Deploy", color="purple", style="dashed") >> lambda_fn
 
     # Lambda processing
-    lambda_fn >> Edge(label="4. Analyze", color="orange", minlen="2") >> anthropic
-    lambda_fn >> Edge(label="5. Save", color="blue", minlen="2") >> s3
-    lambda_fn >> Edge(label="6. Notify", color="green", minlen="2") >> slack
+    lambda_fn >> Edge(label="4. Analyze", color="orange") >> anthropic
+    lambda_fn >> Edge(label="5. Save", color="blue") >> s3
+    lambda_fn >> Edge(label="6. Notify", color="green") >> slack
 
     # Observability (no labels to reduce clutter)
     lambda_fn >> Edge(color="gray", style="dashed") >> cloudwatch
