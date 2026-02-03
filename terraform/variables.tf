@@ -76,3 +76,15 @@ variable "alarm_email" {
   type        = string
   default     = ""
 }
+
+variable "enable_knowledge_base" {
+  description = "Enable Bedrock Knowledge Base for semantic search over notes"
+  type        = bool
+  default     = true
+}
+
+variable "kb_embedding_model" {
+  description = "Bedrock embedding model for vectorization"
+  type        = string
+  default     = "amazon.titan-embed-text-v2:0"
+}

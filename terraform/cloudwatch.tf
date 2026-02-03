@@ -84,7 +84,7 @@ resource "aws_cloudwatch_log_resource_policy" "xray_transaction_search" {
         Principal = {
           Service = "xray.amazonaws.com"
         }
-        Action   = "logs:PutLogEvents"
+        Action = "logs:PutLogEvents"
         Resource = [
           "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:aws/spans:*",
           "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/application-signals/data:*"
@@ -109,7 +109,7 @@ resource "null_resource" "enable_transaction_search" {
   # Re-run if observability setting changes or version bumped
   triggers = {
     enable_observability = var.enable_observability
-    version              = "2"  # Bump to force re-run
+    version              = "2" # Bump to force re-run
   }
 
   # Wait for the log resource policy to be created first

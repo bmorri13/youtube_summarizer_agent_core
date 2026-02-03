@@ -21,22 +21,22 @@ resource "aws_lambda_function" "main" {
       },
       var.enable_observability ? {
         # AWS ADOT configuration for Bedrock AgentCore Observability
-        OTEL_SERVICE_NAME             = var.project_name
-        OTEL_PYTHON_DISTRO            = "aws_distro"
-        OTEL_PYTHON_CONFIGURATOR      = "aws_configurator"
-        OTEL_EXPORTER_OTLP_PROTOCOL   = "http/protobuf"
-        OTEL_TRACES_EXPORTER          = "otlp"
-        OTEL_METRICS_EXPORTER         = "none"
-        OTEL_LOGS_EXPORTER            = "none"
+        OTEL_SERVICE_NAME           = var.project_name
+        OTEL_PYTHON_DISTRO          = "aws_distro"
+        OTEL_PYTHON_CONFIGURATOR    = "aws_configurator"
+        OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
+        OTEL_TRACES_EXPORTER        = "otlp"
+        OTEL_METRICS_EXPORTER       = "none"
+        OTEL_LOGS_EXPORTER          = "none"
 
         # Required by AWS docs for AgentCore Observability
         OTEL_RESOURCE_ATTRIBUTES        = "service.name=${var.project_name}"
         OTEL_EXPORTER_OTLP_LOGS_HEADERS = "x-aws-log-group=/aws/bedrock-agentcore/${var.project_name},x-aws-log-stream=runtime-logs,x-aws-metric-namespace=bedrock-agentcore"
 
         # CloudWatch logging
-        CLOUDWATCH_LOG_GROUP          = "/aws/bedrock-agentcore/${var.project_name}"
-        LOG_LEVEL                     = "INFO"
-        AGENT_OBSERVABILITY_ENABLED   = "true"
+        CLOUDWATCH_LOG_GROUP        = "/aws/bedrock-agentcore/${var.project_name}"
+        LOG_LEVEL                   = "INFO"
+        AGENT_OBSERVABILITY_ENABLED = "true"
       } : {}
     )
   }
