@@ -344,6 +344,55 @@ resource "aws_iam_role_policy" "github_actions" {
         Effect   = "Allow"
         Action   = "sts:GetCallerIdentity"
         Resource = "*"
+      },
+      # S3 Vectors permissions (for Knowledge Base vector storage)
+      {
+        Effect = "Allow"
+        Action = [
+          "s3vectors:CreateVectorBucket",
+          "s3vectors:DeleteVectorBucket",
+          "s3vectors:GetVectorBucket",
+          "s3vectors:ListVectorBuckets",
+          "s3vectors:CreateIndex",
+          "s3vectors:DeleteIndex",
+          "s3vectors:GetIndex",
+          "s3vectors:ListIndexes",
+          "s3vectors:TagResource",
+          "s3vectors:UntagResource",
+          "s3vectors:ListTagsForResource"
+        ]
+        Resource = "*"
+      },
+      # Bedrock Agent permissions (for Knowledge Base)
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:CreateKnowledgeBase",
+          "bedrock:DeleteKnowledgeBase",
+          "bedrock:GetKnowledgeBase",
+          "bedrock:UpdateKnowledgeBase",
+          "bedrock:ListKnowledgeBases",
+          "bedrock:CreateDataSource",
+          "bedrock:DeleteDataSource",
+          "bedrock:GetDataSource",
+          "bedrock:UpdateDataSource",
+          "bedrock:ListDataSources",
+          "bedrock:TagResource",
+          "bedrock:UntagResource",
+          "bedrock:ListTagsForResource"
+        ]
+        Resource = "*"
+      },
+      # S3 notification permissions (for KB sync)
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutBucketNotification",
+          "s3:GetBucketNotification"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.project_name}-*"
+        ]
       }
     ]
   })
