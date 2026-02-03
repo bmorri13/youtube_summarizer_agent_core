@@ -46,6 +46,70 @@ def is_video_processed_s3(video_id: str) -> bool:
         return False
 
 
+def mark_video_processing_s3(
+    video_id: str, title: str, channel_id: str, channel_name: str
+) -> bool:
+    """Mark video as processing in S3 BEFORE invoking Lambda.
+
+    This prevents race conditions where multiple fetchers process the same video.
+    The video entry is created with status "processing" before Lambda is invoked.
+    Lambda will later update this to "processed" with the note path.
+
+    Args:
+        video_id: YouTube video ID
+        title: Video title
+        channel_id: YouTube channel ID
+        channel_name: Channel name
+
+    Returns:
+        True if successfully marked as processing, False if already exists or error
+    """
+    bucket = os.getenv("NOTES_S3_BUCKET")
+
+    if not bucket:
+        print("  Warning: NOTES_S3_BUCKET not set, cannot mark as processing")
+        return False
+
+    s3_client = boto3.client("s3", region_name=os.getenv("AWS_REGION", "us-east-1"))
+    key = "notes/processed_videos.json"
+
+    try:
+        # Load current index
+        try:
+            response = s3_client.get_object(Bucket=bucket, Key=key)
+            processed = json.loads(response["Body"].read().decode("utf-8"))
+        except s3_client.exceptions.NoSuchKey:
+            processed = {"videos": {}, "channels": {}}
+
+        # Double-check not already present (in case of race)
+        if video_id in processed.get("videos", {}):
+            return False  # Already being processed
+
+        # Mark as processing
+        from datetime import datetime
+
+        processed["videos"][video_id] = {
+            "processing_started": datetime.now().isoformat(),
+            "status": "processing",
+            "title": title,
+            "channel_id": channel_id,
+            "channel_name": channel_name,
+        }
+
+        # Save back to S3
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=json.dumps(processed, indent=2).encode("utf-8"),
+            ContentType="application/json",
+        )
+        return True
+
+    except Exception as e:
+        print(f"  Warning: Could not mark video as processing: {e}")
+        return False
+
+
 def fetch_and_process(channel_url: str) -> bool:
     """Fetch latest video transcript and send to Lambda for processing.
 
@@ -83,7 +147,17 @@ def fetch_and_process(channel_url: str) -> bool:
         print(f"  Failed to fetch transcript: {e}")
         return False
 
-    # 3. Send to Lambda for processing (summarize, save notes, Slack)
+    # 3. Mark as processing BEFORE invoking Lambda to prevent race conditions
+    if not mark_video_processing_s3(
+        video_id,
+        video_info["title"],
+        video_info["channel_id"],
+        video_info["channel_name"],
+    ):
+        print("  Video already being processed by another instance")
+        return True
+
+    # 4. Send to Lambda for processing (summarize, save notes, Slack)
     try:
         lambda_client = boto3.client(
             "lambda", region_name=os.getenv("AWS_REGION", "us-east-1")

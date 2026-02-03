@@ -281,6 +281,9 @@ def mark_video_processed(
 ) -> None:
     """Mark a video as processed in the index.
 
+    Updates existing entry if present (preserves processing_started timestamp
+    from when local_fetcher marked it as "processing").
+
     Args:
         video_id: YouTube video ID
         title: Video title
@@ -293,8 +296,13 @@ def mark_video_processed(
     if "videos" not in index:
         index["videos"] = {}
 
+    # Preserve processing_started timestamp if it exists (set by local_fetcher)
+    existing = index["videos"].get(video_id, {})
+
     index["videos"][video_id] = {
         "processed_at": datetime.now().isoformat(),
+        "processing_started": existing.get("processing_started"),
+        "status": "processed",
         "title": title,
         "channel_id": channel_id,
         "channel_name": channel_name,
