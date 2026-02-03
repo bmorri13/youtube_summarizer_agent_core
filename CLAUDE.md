@@ -15,6 +15,9 @@ python -m venv venv && source venv/bin/activate && pip install -r requirements.t
 # Run agent locally (loads .env automatically)
 python agent.py "https://www.youtube.com/watch?v=VIDEO_ID"
 
+# Run agent on a channel (checks latest video)
+python agent.py "https://www.youtube.com/@ChannelName"
+
 # Docker services
 docker-compose up local     # Interactive local dev
 docker-compose up server    # HTTP server (port 8080)
@@ -41,6 +44,15 @@ The agent in `agent.py` implements a standard Anthropic tool-calling loop:
 3. `run_agent()` loops until `stop_reason == "end_turn"` or max turns reached
 4. `handle_tool_call()` dispatches tool executions and logs results
 
+### Tools
+Current tools in `tools/`:
+- `youtube.py` - `get_transcript`: Fetch video transcript and metadata
+- `channel.py` - `get_latest_channel_video`: Get latest video from a channel
+- `notes.py` - `save_note`: Save analysis to local/S3, track processed videos
+- `slack.py` - `send_slack_notification`: Send Block Kit formatted notifications
+
+Each tool module exports `TOOL_DEFINITION` (JSON schema) and a main function.
+
 ### Hybrid Fetcher Architecture
 YouTube blocks transcript requests from cloud IPs. The solution:
 
@@ -52,11 +64,37 @@ The `process_transcript: true` flag in Lambda events indicates a pre-fetched tra
 
 **Important**: When `run_agent_with_transcript()` is called, the `get_transcript` tool is filtered out of the available tools list. This prevents the LLM from attempting to re-fetch the transcript (which would fail due to IP blocking). Prompt instructions alone were unreliable—removing the tool entirely is the robust solution.
 
+### Lambda Event Formats
+The Lambda handler accepts multiple formats:
+```python
+# Direct video
+{"video_url": "https://youtube.com/watch?v=VIDEO_ID"}
+
+# Single channel
+{"channel_url": "https://youtube.com/@ChannelName"}
+
+# Batch channels (scheduled runs)
+{"channel_urls": ["https://youtube.com/@Ch1", "https://youtube.com/@Ch2"]}
+
+# Pre-fetched transcript from local fetcher
+{"process_transcript": true, "video_url": "...", "video_id": "...", "transcript": "..."}
+```
+
+### Observability Module
+`observability.py` provides tracing and logging for the agent:
+
+- Uses OpenTelemetry with AWS ADOT for X-Ray/CloudWatch integration
+- `AgentObservability` context manager wraps agent runs
+- `trace_span()` and `trace_function()` for custom tracing
+- `log_agent_event()` for structured CloudWatch logging
+- `sanitize_log_value()` prevents log injection attacks
+- Controlled by `AGENT_OBSERVABILITY_ENABLED=true`
+
 ### Adding New Tools
 1. Create `tools/my_tool.py` with:
    - `TOOL_DEFINITION` dict (JSON schema for Claude API)
    - Main function implementation
-2. Export in `tools/__init__.py`
+2. Export in `tools/__init__.py`: add to `ALL_TOOLS` list
 3. Add dispatch case in `handle_tool_call()` in `agent.py`
 
 ### Key Implementation Notes
@@ -70,7 +108,7 @@ The `process_transcript: true` flag in Lambda events indicates a pre-fetched tra
 
 | Entry Point | Use Case |
 |-------------|----------|
-| `agent.py` | CLI - direct execution with video URL |
+| `agent.py` | CLI - direct execution with video URL or channel URL |
 | `lambda_handler.py` | AWS Lambda handler (supports video, channel, batch) |
 | `server.py` | FastAPI HTTP server with `/analyze` endpoint |
 | `local_fetcher.py` | Cron-based fetcher for home server deployment |
