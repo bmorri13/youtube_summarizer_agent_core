@@ -41,7 +41,7 @@ output "knowledge_base_arn" {
 
 output "vector_bucket_name" {
   description = "S3 Vector bucket name"
-  value       = var.enable_knowledge_base ? aws_s3vectors_vector_bucket.notes_vectors[0].bucket_name : null
+  value       = var.enable_knowledge_base ? aws_s3vectors_vector_bucket.notes_vectors[0].vector_bucket_name : null
 }
 
 output "data_source_id" {

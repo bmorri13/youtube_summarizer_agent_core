@@ -3,18 +3,19 @@
 
 # S3 Vector Bucket (stores vector embeddings)
 resource "aws_s3vectors_vector_bucket" "notes_vectors" {
-  count       = var.enable_knowledge_base ? 1 : 0
-  bucket_name = "${var.project_name}-vectors-${random_id.bucket_suffix.hex}"
+  count              = var.enable_knowledge_base ? 1 : 0
+  vector_bucket_name = "${var.project_name}-vectors-${random_id.bucket_suffix.hex}"
 }
 
 # S3 Vector Index (defines embedding dimensions and distance metric)
 resource "aws_s3vectors_index" "notes_index" {
   count              = var.enable_knowledge_base ? 1 : 0
-  vector_bucket_name = aws_s3vectors_vector_bucket.notes_vectors[0].bucket_name
+  vector_bucket_name = aws_s3vectors_vector_bucket.notes_vectors[0].vector_bucket_name
   index_name         = "notes-index"
 
   # Titan Embed Text v2 uses 1024 dimensions
-  dimensions = 1024
+  data_type       = "float32"
+  dimension       = 1024
 
   # Cosine similarity for semantic search
   distance_metric = "cosine"
@@ -100,8 +101,8 @@ resource "aws_iam_role_policy" "bedrock_kb_vectors" {
         "s3vectors:GetVectors"
       ]
       Resource = [
-        aws_s3vectors_vector_bucket.notes_vectors[0].arn,
-        "${aws_s3vectors_vector_bucket.notes_vectors[0].arn}/*"
+        aws_s3vectors_vector_bucket.notes_vectors[0].vector_bucket_arn,
+        "${aws_s3vectors_vector_bucket.notes_vectors[0].vector_bucket_arn}/*"
       ]
     }]
   })
@@ -123,8 +124,7 @@ resource "aws_bedrockagent_knowledge_base" "notes" {
   storage_configuration {
     type = "S3_VECTORS"
     s3_vectors_configuration {
-      bucket_arn = aws_s3vectors_vector_bucket.notes_vectors[0].arn
-      index_name = aws_s3vectors_index.notes_index[0].index_name
+      index_arn = aws_s3vectors_index.notes_index[0].index_arn
     }
   }
 
