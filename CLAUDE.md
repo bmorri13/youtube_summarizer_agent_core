@@ -132,10 +132,12 @@ A standalone chatbot that queries the Bedrock Knowledge Base of video summaries.
 - Converse API `content` is a list of blocks: `[{"text": "..."}]`, not a plain string
 - `PROMPT_ATTACK` filter: output strength MUST be `NONE` (AWS requirement)
 - Guardrail version in Converse API must be numeric (e.g., `"1"`), not `"DRAFT"`
-- Cross-region model ID format: `us.anthropic.claude-sonnet-4-5-20250929-v1:0` (includes date, uses `:0` suffix); IAM must allow `us.*` ARN patterns
+- Cross-region model ID format: `us.anthropic.claude-sonnet-4-5-20250929-v1:0` (includes date, uses `:0` suffix); IAM needs both `arn:aws:bedrock:*::foundation-model/anthropic.*` and inference-profile ARN
 - Frontend dev: `cd frontend && npm run dev` (port 5173) proxies `/api/*` to `http://localhost:8081`
 
 **Docker**: `docker-compose up chatbot` runs standalone on port 8081.
+
+**Deployment**: ECS Fargate behind ALB (HTTP only; Cloudflare CNAME + proxy handles HTTPS). Public subnets with `assign_public_ip = true` (no NAT Gateway). CI/CD updates task definition with new image SHA via `aws ecs register-task-definition` + `update-service`.
 
 ### Key Implementation Notes
 - **YouTube Transcript API v1.2.3+**: Uses instance-based API: `YouTubeTranscriptApi().fetch(video_id)`
@@ -168,10 +170,11 @@ Located in `terraform/`:
 - `bedrock_kb.tf` - S3 Vectors bucket/index, Bedrock Knowledge Base, data source
 - `bedrock_kb_sync.tf` - Auto-sync Lambda triggered by S3 events
 - `bedrock_guardrail.tf` - Bedrock Guardrail for chatbot content filtering
+- `ecs_chatbot.tf` - ECS Fargate chatbot: ECR, ALB, security groups, ECS cluster/service/task def, IAM roles
 
 Key variables:
 - `enable_observability` - Controls ADOT/AgentCore tracing setup
-- `enable_knowledge_base` - Controls Bedrock Knowledge Base and S3 Vectors deployment
+- `enable_knowledge_base` - Controls Bedrock Knowledge Base, S3 Vectors, and ECS chatbot deployment
 
 ## Environment Variables
 
