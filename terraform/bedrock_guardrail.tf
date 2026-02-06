@@ -48,7 +48,7 @@ resource "aws_bedrock_guardrail" "chatbot" {
     topics_config {
       name       = "off-topic"
       type       = "DENY"
-      definition = "Questions or requests that are completely unrelated to YouTube videos, video summaries, video analysis, or any topics discussed in videos. Do NOT block questions asking about video summaries, latest videos, video content, or topics covered in analyzed videos."
+      definition = "Requests completely unrelated to YouTube videos or their content, such as creative writing, trivia, coding help, or jokes. Allow all questions about video summaries, latest videos, and video topics."
       examples = [
         "Write me a poem about cats",
         "What is the capital of France",
