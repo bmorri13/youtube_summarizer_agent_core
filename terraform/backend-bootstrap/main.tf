@@ -473,8 +473,7 @@ resource "aws_iam_role_policy" "github_actions" {
           "bedrock:GetGuardrail",
           "bedrock:UpdateGuardrail",
           "bedrock:ListGuardrails",
-          "bedrock:CreateGuardrailVersion",
-          "bedrock:ListGuardrailVersions"
+          "bedrock:CreateGuardrailVersion"
         ]
         Resource = "*"
       }
