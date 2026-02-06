@@ -157,7 +157,7 @@ def _get_processed_index_path() -> str:
     """Get the path to the processed videos index file."""
     backend = os.environ.get("NOTES_BACKEND", "local")
     if backend == "s3":
-        return f"notes/{PROCESSED_VIDEOS_FILE}"
+        return f"metadata/{PROCESSED_VIDEOS_FILE}"
     else:
         directory = os.environ.get("NOTES_LOCAL_DIR", "./notes")
         return os.path.join(directory, PROCESSED_VIDEOS_FILE)
@@ -205,14 +205,19 @@ def _load_index_from_s3() -> dict:
         raise ValueError("NOTES_S3_BUCKET not configured")
 
     s3 = boto3.client("s3")
-    key = f"notes/{PROCESSED_VIDEOS_FILE}"
+    key = f"metadata/{PROCESSED_VIDEOS_FILE}"
 
     try:
         response = s3.get_object(Bucket=bucket, Key=key)
         return json.loads(response["Body"].read().decode("utf-8"))
     except ClientError as e:
         if e.response["Error"]["Code"] == "NoSuchKey":
-            raise FileNotFoundError(f"Index file not found: s3://{bucket}/{key}")
+            # Fallback: check old location for backwards compatibility
+            try:
+                response = s3.get_object(Bucket=bucket, Key=f"notes/{PROCESSED_VIDEOS_FILE}")
+                return json.loads(response["Body"].read().decode("utf-8"))
+            except ClientError:
+                raise FileNotFoundError(f"Index file not found: s3://{bucket}/{key}")
         raise
 
 
@@ -249,7 +254,7 @@ def _save_index_to_s3(index: dict) -> None:
         raise ValueError("NOTES_S3_BUCKET not configured")
 
     s3 = boto3.client("s3")
-    key = f"notes/{PROCESSED_VIDEOS_FILE}"
+    key = f"metadata/{PROCESSED_VIDEOS_FILE}"
 
     s3.put_object(
         Bucket=bucket,
