@@ -306,7 +306,8 @@ resource "aws_iam_role_policy" "ecs_task_bedrock" {
         ]
         Resource = [
           "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.*",
-          "arn:aws:bedrock:us.*::foundation-model/anthropic.*"
+          "arn:aws:bedrock:us.*::foundation-model/anthropic.*",
+          "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/us.anthropic.*"
         ]
       },
       {
