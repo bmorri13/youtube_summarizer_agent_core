@@ -37,21 +37,46 @@ resource "aws_ecr_lifecycle_policy" "chatbot" {
 }
 
 # =============================================================================
+# Cloudflare IP Ranges (restrict ALB to Cloudflare-only traffic)
+# =============================================================================
+
+data "http" "cloudflare_ipv4" {
+  url = "https://www.cloudflare.com/ips-v4/"
+}
+
+data "http" "cloudflare_ipv6" {
+  url = "https://www.cloudflare.com/ips-v6/"
+}
+
+locals {
+  cloudflare_ipv4_ranges = [for cidr in split("\n", trimspace(data.http.cloudflare_ipv4.response_body)) : cidr if cidr != ""]
+  cloudflare_ipv6_ranges = [for cidr in split("\n", trimspace(data.http.cloudflare_ipv6.response_body)) : cidr if cidr != ""]
+}
+
+# =============================================================================
 # Security Groups
 # =============================================================================
 
 resource "aws_security_group" "chatbot_alb" {
   count       = var.enable_knowledge_base ? 1 : 0
   name        = "${var.project_name}-chatbot-alb"
-  description = "ALB security group for chatbot"
+  description = "ALB security group for chatbot (Cloudflare only)"
   vpc_id      = var.vpc_id
 
   ingress {
-    description = "HTTP from anywhere"
+    description = "HTTP from Cloudflare IPv4"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = local.cloudflare_ipv4_ranges
+  }
+
+  ingress {
+    description      = "HTTP from Cloudflare IPv6"
+    from_port        = 80
+    to_port          = 80
+    protocol         = "tcp"
+    ipv6_cidr_blocks = local.cloudflare_ipv6_ranges
   }
 
   egress {
