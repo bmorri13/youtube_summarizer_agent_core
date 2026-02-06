@@ -229,7 +229,6 @@ resource "aws_ecs_task_definition" "chatbot" {
         { name = "LOG_LEVEL", value = "INFO" },
       ],
       var.enable_observability ? [
-        { name = "AGENT_OBSERVABILITY_ENABLED", value = "true" },
         { name = "OTEL_SERVICE_NAME", value = "${var.project_name}-chatbot" },
         { name = "OTEL_PYTHON_DISTRO", value = "aws_distro" },
         { name = "OTEL_PYTHON_CONFIGURATOR", value = "aws_configurator" },
@@ -239,9 +238,8 @@ resource "aws_ecs_task_definition" "chatbot" {
         { name = "OTEL_METRICS_EXPORTER", value = "none" },
         { name = "OTEL_LOGS_EXPORTER", value = "none" },
         { name = "OTEL_RESOURCE_ATTRIBUTES", value = "service.name=${var.project_name}-chatbot" },
-        { name = "OTEL_PYTHON_EXCLUDED_URLS", value = "health" },
-        { name = "OTEL_EXPORTER_OTLP_LOGS_HEADERS", value = "x-aws-log-group=/aws/bedrock-agentcore/${var.project_name},x-aws-log-stream=chatbot-logs,x-aws-metric-namespace=bedrock-agentcore" },
-        { name = "CLOUDWATCH_LOG_GROUP", value = "/aws/bedrock-agentcore/${var.project_name}" },
+        { name = "OTEL_PYTHON_EXCLUDED_URLS", value = "health,^/$,^/assets" },
+        { name = "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS", value = "health,^/$,^/assets" },
       ] : []
     )
 
