@@ -88,3 +88,33 @@ variable "kb_embedding_model" {
   type        = string
   default     = "amazon.titan-embed-text-v2:0"
 }
+
+variable "chatbot_model_id" {
+  description = "Bedrock model ID for the RAG chatbot"
+  type        = string
+  default     = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+}
+
+variable "vpc_id" {
+  description = "VPC ID for ECS Fargate chatbot deployment"
+  type        = string
+  default     = "vpc-0a6b13ecadb3acc47"
+}
+
+variable "public_subnet_ids" {
+  description = "Public subnet IDs for ALB and ECS tasks"
+  type        = list(string)
+  default     = ["subnet-0c4148ebe5b5508d2", "subnet-02d4d1fa1b3d8ab0c"]
+}
+
+variable "chatbot_fargate_cpu" {
+  description = "CPU units for Fargate chatbot task (1024 = 1 vCPU)"
+  type        = number
+  default     = 1024
+}
+
+variable "chatbot_fargate_memory" {
+  description = "Memory in MB for Fargate chatbot task"
+  type        = number
+  default     = 2048
+}

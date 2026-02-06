@@ -21,6 +21,7 @@ python agent.py "https://www.youtube.com/@ChannelName"
 # Docker services
 docker-compose up local     # Interactive local dev
 docker-compose up server    # HTTP server (port 8080)
+docker-compose up chatbot   # RAG chatbot (port 8081)
 docker-compose up lambda    # Lambda emulation (port 9000)
 
 # Test Lambda locally
@@ -34,6 +35,10 @@ cd terraform && terraform init && terraform apply
 ssh root@docker-compose-03 "cd /opt/docker/yt-transcript && docker compose run --rm fetcher python local_fetcher.py"
 ```
 
+## Testing
+
+There is no automated test suite. Manual testing is done by running the agent against real YouTube URLs.
+
 ## Architecture
 
 ### Agent Loop Pattern
@@ -46,8 +51,8 @@ The agent in `agent.py` implements a standard Anthropic tool-calling loop:
 
 ### Tools
 Current tools in `tools/`:
-- `youtube.py` - `get_transcript`: Fetch video transcript and metadata
-- `channel.py` - `get_latest_channel_video`: Get latest video from a channel
+- `youtube.py` - `get_transcript`: Fetch video transcript and metadata via `youtube-transcript-api`
+- `channel.py` - `get_latest_channel_video`: Get latest video from a channel via RSS feed (filters out Shorts < 90s)
 - `notes.py` - `save_note`: Save analysis to local/S3, track processed videos
 - `slack.py` - `send_slack_notification`: Send Block Kit formatted notifications
 
@@ -97,6 +102,41 @@ The Lambda handler accepts multiple formats:
 2. Export in `tools/__init__.py`: add to `ALL_TOOLS` list
 3. Add dispatch case in `handle_tool_call()` in `agent.py`
 
+### Bedrock Knowledge Base (Semantic Search)
+When `enable_knowledge_base = true`, notes are indexed for semantic search:
+
+- **S3 Vectors**: Vector storage using `amazon.titan-embed-text-v2:0` embeddings (1024 dimensions, cosine similarity)
+- **Knowledge Base**: Bedrock Knowledge Base connected to S3 Vectors index
+- **Auto-sync**: Lambda trigger on `s3:ObjectCreated:*` for `notes/*.md` starts ingestion automatically
+- **Metadata fix**: Large Bedrock metadata moved to non-filterable storage (40KB limit) to avoid 2KB filterable limit errors
+
+**Query the Knowledge Base:**
+```bash
+aws bedrock-agent-runtime retrieve \
+  --knowledge-base-id <KB_ID> \
+  --retrieval-query '{"text": "your search query"}' \
+  --region us-east-1
+```
+
+### RAG Chatbot
+A standalone chatbot that queries the Bedrock Knowledge Base of video summaries. Runs as a separate server — no dependency on `agent.py` or `ANTHROPIC_API_KEY`.
+
+**Architecture**: Retrieve + Converse pattern (two separate boto3 calls):
+1. `chatbot.py` — Core logic: `retrieve_from_knowledge_base()` calls `bedrock-agent-runtime.retrieve()`, then `chat()`/`chat_stream()` calls `bedrock-runtime.converse()`/`converse_stream()`
+2. `chatbot_server.py` — Standalone FastAPI server (port 8081) with `/api/chat` and `/api/chat/stream` SSE endpoints
+3. `frontend/` — React (Vite) chat UI with SSE streaming and source citations
+
+**Bedrock Guardrails**: Content filtering via `terraform/bedrock_guardrail.tf` — blocks hate/insults/sexual/violence/misconduct/prompt attacks (all HIGH), off-topic questions, and profanity.
+
+**Key details**:
+- Converse API `content` is a list of blocks: `[{"text": "..."}]`, not a plain string
+- `PROMPT_ATTACK` filter: output strength MUST be `NONE` (AWS requirement)
+- Guardrail version in Converse API must be numeric (e.g., `"1"`), not `"DRAFT"`
+- Cross-region model ID format: `us.anthropic.claude-sonnet-4-5-20250929-v1:0` (includes date, uses `:0` suffix); IAM must allow `us.*` ARN patterns
+- Frontend dev: `cd frontend && npm run dev` (port 5173) proxies `/api/*` to `http://localhost:8081`
+
+**Docker**: `docker-compose up chatbot` runs standalone on port 8081.
+
 ### Key Implementation Notes
 - **YouTube Transcript API v1.2.3+**: Uses instance-based API: `YouTubeTranscriptApi().fetch(video_id)`
 - **Video metadata**: Fetched via YouTube oembed API (no API key needed)
@@ -111,17 +151,27 @@ The Lambda handler accepts multiple formats:
 | `agent.py` | CLI - direct execution with video URL or channel URL |
 | `lambda_handler.py` | AWS Lambda handler (supports video, channel, batch) |
 | `server.py` | FastAPI HTTP server with `/analyze` endpoint |
+| `chatbot_server.py` | Standalone FastAPI chatbot server (port 8081) |
 | `local_fetcher.py` | Cron-based fetcher for home server deployment |
+| `run_local.py` | Interactive REPL loop for testing multiple URLs |
+| `run_scheduled.py` | Scheduled channel monitoring (reads `MONITOR_CHANNEL_URLS`) |
 
 ## Terraform Infrastructure
 
 Located in `terraform/`:
+- `main.tf` / `backend.tf` / `variables.tf` / `outputs.tf` - Provider config, state backend, variables
 - `lambda.tf` - Lambda function with OTEL environment variables
 - `iam.tf` - IAM roles for Lambda, S3, X-Ray, CloudWatch
+- `ecr.tf` - ECR repository for Lambda container image
 - `cloudwatch.tf` - Log groups and Transaction Search resource policy
 - `s3.tf` - Notes storage bucket
+- `bedrock_kb.tf` - S3 Vectors bucket/index, Bedrock Knowledge Base, data source
+- `bedrock_kb_sync.tf` - Auto-sync Lambda triggered by S3 events
+- `bedrock_guardrail.tf` - Bedrock Guardrail for chatbot content filtering
 
-Key variable: `enable_observability` controls ADOT/AgentCore tracing setup.
+Key variables:
+- `enable_observability` - Controls ADOT/AgentCore tracing setup
+- `enable_knowledge_base` - Controls Bedrock Knowledge Base and S3 Vectors deployment
 
 ## Environment Variables
 
@@ -136,3 +186,7 @@ Optional:
 - `CLAUDE_MODEL` - Model ID (default: `claude-sonnet-4-20250514`)
 - `AGENT_OBSERVABILITY_ENABLED` - Set `true` for OpenTelemetry tracing + CloudWatch logging
 - `MONITOR_CHANNEL_URLS` - Comma-separated channel URLs for scheduled monitoring
+- `KNOWLEDGE_BASE_ID` - Bedrock Knowledge Base ID for RAG chatbot
+- `CHATBOT_MODEL_ID` - Bedrock model for chatbot (default: `us.anthropic.claude-sonnet-4-5-20250929-v1:0`)
+- `BEDROCK_GUARDRAIL_ID` / `BEDROCK_GUARDRAIL_VERSION` - Bedrock Guardrail config
+- `KB_MAX_RESULTS` - Max KB retrieval results per query (default: `5`)

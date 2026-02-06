@@ -14,8 +14,8 @@ resource "aws_s3vectors_index" "notes_index" {
   index_name         = "notes-index"
 
   # Titan Embed Text v2 uses 1024 dimensions
-  data_type       = "float32"
-  dimension       = 1024
+  data_type = "float32"
+  dimension = 1024
 
   # Cosine similarity for semantic search
   distance_metric = "cosine"

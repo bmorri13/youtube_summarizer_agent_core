@@ -115,6 +115,30 @@ services:
       - ./notes:/app/notes
     command: python server.py
 
+  # RAG Chatbot (standalone - no Anthropic API key needed)
+  chatbot:
+    build:
+      context: .
+      dockerfile: Dockerfile.chatbot
+    container_name: youtube-chatbot
+    ports:
+      - "8081:8081"
+    environment:
+      # Bedrock Knowledge Base
+      - KNOWLEDGE_BASE_ID=${KNOWLEDGE_BASE_ID:-}
+      - CHATBOT_MODEL_ID=${CHATBOT_MODEL_ID:-us.anthropic.claude-sonnet-4-5-20250929-v1:0}
+      - BEDROCK_GUARDRAIL_ID=${BEDROCK_GUARDRAIL_ID:-}
+      - BEDROCK_GUARDRAIL_VERSION=${BEDROCK_GUARDRAIL_VERSION:-}
+      - KB_MAX_RESULTS=${KB_MAX_RESULTS:-5}
+      # AWS credentials for Bedrock access
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      # Observability
+      - AGENT_OBSERVABILITY_ENABLED=${AGENT_OBSERVABILITY_ENABLED:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    command: python chatbot_server.py
+
   # Local transcript fetcher (runs on cron)
   # Fetches transcripts locally (bypasses YouTube IP blocking) and sends to Lambda
   fetcher:

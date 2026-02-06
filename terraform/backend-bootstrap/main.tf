@@ -393,6 +393,90 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = [
           "arn:aws:s3:::${var.project_name}-*"
         ]
+      },
+      # ECS permissions (for chatbot Fargate deployment)
+      {
+        Effect = "Allow"
+        Action = [
+          "ecs:CreateCluster",
+          "ecs:DeleteCluster",
+          "ecs:DescribeClusters",
+          "ecs:CreateService",
+          "ecs:DeleteService",
+          "ecs:DescribeServices",
+          "ecs:UpdateService",
+          "ecs:RegisterTaskDefinition",
+          "ecs:DeregisterTaskDefinition",
+          "ecs:DescribeTaskDefinition",
+          "ecs:ListTaskDefinitions",
+          "ecs:ListTasks",
+          "ecs:DescribeTasks",
+          "ecs:TagResource",
+          "ecs:UntagResource",
+          "ecs:ListTagsForResource"
+        ]
+        Resource = "*"
+      },
+      # ELB permissions (for chatbot ALB)
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:CreateLoadBalancer",
+          "elasticloadbalancing:DeleteLoadBalancer",
+          "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:DescribeLoadBalancerAttributes",
+          "elasticloadbalancing:ModifyLoadBalancerAttributes",
+          "elasticloadbalancing:CreateTargetGroup",
+          "elasticloadbalancing:DeleteTargetGroup",
+          "elasticloadbalancing:DescribeTargetGroups",
+          "elasticloadbalancing:DescribeTargetGroupAttributes",
+          "elasticloadbalancing:ModifyTargetGroupAttributes",
+          "elasticloadbalancing:DescribeTargetHealth",
+          "elasticloadbalancing:CreateListener",
+          "elasticloadbalancing:DeleteListener",
+          "elasticloadbalancing:DescribeListeners",
+          "elasticloadbalancing:ModifyListener",
+          "elasticloadbalancing:AddTags",
+          "elasticloadbalancing:RemoveTags",
+          "elasticloadbalancing:DescribeTags",
+          "elasticloadbalancing:SetSecurityGroups",
+          "elasticloadbalancing:SetSubnets"
+        ]
+        Resource = "*"
+      },
+      # EC2 permissions (VPC/Security Groups for ECS)
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeVpcs",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DescribeAccountAttributes",
+          "ec2:CreateSecurityGroup",
+          "ec2:DeleteSecurityGroup",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:AuthorizeSecurityGroupEgress",
+          "ec2:RevokeSecurityGroupIngress",
+          "ec2:RevokeSecurityGroupEgress",
+          "ec2:CreateTags",
+          "ec2:DeleteTags"
+        ]
+        Resource = "*"
+      },
+      # Bedrock Guardrail permissions
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:CreateGuardrail",
+          "bedrock:DeleteGuardrail",
+          "bedrock:GetGuardrail",
+          "bedrock:UpdateGuardrail",
+          "bedrock:ListGuardrails",
+          "bedrock:CreateGuardrailVersion",
+          "bedrock:ListGuardrailVersions"
+        ]
+        Resource = "*"
       }
     ]
   })

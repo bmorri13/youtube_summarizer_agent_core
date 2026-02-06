@@ -92,3 +92,40 @@ resource "aws_iam_role_policy" "lambda_cloudwatch_custom" {
     }]
   })
 }
+
+# Bedrock chatbot permissions (conditional on Knowledge Base)
+resource "aws_iam_role_policy" "lambda_bedrock_chatbot" {
+  count = var.enable_knowledge_base ? 1 : 0
+  name  = "${var.project_name}-bedrock-chatbot"
+  role  = aws_iam_role.lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["bedrock:Retrieve"]
+        Resource = [aws_bedrockagent_knowledge_base.notes[0].arn]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream"
+        ]
+        Resource = [
+          "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.*",
+          "arn:aws:bedrock:us.*::foundation-model/anthropic.*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:ApplyGuardrail",
+          "bedrock:GetGuardrail"
+        ]
+        Resource = [aws_bedrock_guardrail.chatbot[0].guardrail_arn]
+      }
+    ]
+  })
+}

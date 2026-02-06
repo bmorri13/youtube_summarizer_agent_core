@@ -37,6 +37,14 @@ resource "aws_lambda_function" "main" {
         CLOUDWATCH_LOG_GROUP        = "/aws/bedrock-agentcore/${var.project_name}"
         LOG_LEVEL                   = "INFO"
         AGENT_OBSERVABILITY_ENABLED = "true"
+      } : {},
+      var.enable_knowledge_base ? {
+        # RAG Chatbot configuration
+        KNOWLEDGE_BASE_ID         = aws_bedrockagent_knowledge_base.notes[0].id
+        CHATBOT_MODEL_ID          = var.chatbot_model_id
+        BEDROCK_GUARDRAIL_ID      = aws_bedrock_guardrail.chatbot[0].guardrail_id
+        BEDROCK_GUARDRAIL_VERSION = aws_bedrock_guardrail_version.chatbot[0].version
+        KB_MAX_RESULTS            = "5"
       } : {}
     )
   }

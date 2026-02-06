@@ -48,3 +48,35 @@ output "data_source_id" {
   description = "Bedrock Data Source ID"
   value       = var.enable_knowledge_base ? aws_bedrockagent_data_source.notes_s3[0].data_source_id : null
 }
+
+# Guardrail outputs
+output "guardrail_id" {
+  description = "Bedrock Guardrail ID for the chatbot"
+  value       = var.enable_knowledge_base ? aws_bedrock_guardrail.chatbot[0].guardrail_id : null
+}
+
+output "guardrail_version" {
+  description = "Bedrock Guardrail version for the chatbot"
+  value       = var.enable_knowledge_base ? aws_bedrock_guardrail_version.chatbot[0].version : null
+}
+
+# ECS Fargate chatbot outputs
+output "chatbot_ecr_repository_url" {
+  description = "ECR repository URL for the chatbot image"
+  value       = var.enable_knowledge_base ? aws_ecr_repository.chatbot[0].repository_url : null
+}
+
+output "chatbot_url" {
+  description = "ALB URL for the chatbot (HTTP; HTTPS via Cloudflare)"
+  value       = var.enable_knowledge_base ? "http://${aws_lb.chatbot[0].dns_name}" : null
+}
+
+output "chatbot_cluster_name" {
+  description = "ECS cluster name for CI/CD deployments"
+  value       = var.enable_knowledge_base ? aws_ecs_cluster.chatbot[0].name : null
+}
+
+output "chatbot_service_name" {
+  description = "ECS service name for CI/CD deployments"
+  value       = var.enable_knowledge_base ? aws_ecs_service.chatbot[0].name : null
+}

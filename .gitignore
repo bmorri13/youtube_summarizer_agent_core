@@ -19,6 +19,13 @@ youtube-analyzer.zip
 .vscode/
 *.swp
 
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
 # Claude Code
 .claude/
 
