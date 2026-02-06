@@ -70,5 +70,9 @@ resource "aws_bedrock_guardrail" "chatbot" {
 resource "aws_bedrock_guardrail_version" "chatbot" {
   count         = var.enable_knowledge_base ? 1 : 0
   guardrail_arn = aws_bedrock_guardrail.chatbot[0].guardrail_arn
-  description   = "Initial version"
+  description   = "Published version"
+
+  lifecycle {
+    replace_triggered_by = [aws_bedrock_guardrail.chatbot[0]]
+  }
 }
