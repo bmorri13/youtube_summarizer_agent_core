@@ -30,4 +30,4 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 EXPOSE 8081
 
-CMD ["python", "chatbot_server.py"]
+CMD ["opentelemetry-instrument", "python", "chatbot_server.py"]

@@ -218,15 +218,30 @@ resource "aws_ecs_task_definition" "chatbot" {
       protocol      = "tcp"
     }]
 
-    environment = [
-      { name = "KNOWLEDGE_BASE_ID", value = aws_bedrockagent_knowledge_base.notes[0].id },
-      { name = "CHATBOT_MODEL_ID", value = var.chatbot_model_id },
-      { name = "BEDROCK_GUARDRAIL_ID", value = aws_bedrock_guardrail.chatbot[0].guardrail_id },
-      { name = "BEDROCK_GUARDRAIL_VERSION", value = aws_bedrock_guardrail_version.chatbot[0].version },
-      { name = "KB_MAX_RESULTS", value = "5" },
-      { name = "AWS_REGION", value = var.aws_region },
-      { name = "LOG_LEVEL", value = "INFO" }
-    ]
+    environment = concat(
+      [
+        { name = "KNOWLEDGE_BASE_ID", value = aws_bedrockagent_knowledge_base.notes[0].id },
+        { name = "CHATBOT_MODEL_ID", value = var.chatbot_model_id },
+        { name = "BEDROCK_GUARDRAIL_ID", value = aws_bedrock_guardrail.chatbot[0].guardrail_id },
+        { name = "BEDROCK_GUARDRAIL_VERSION", value = aws_bedrock_guardrail_version.chatbot[0].version },
+        { name = "KB_MAX_RESULTS", value = "5" },
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "LOG_LEVEL", value = "INFO" },
+      ],
+      var.enable_observability ? [
+        { name = "AGENT_OBSERVABILITY_ENABLED", value = "true" },
+        { name = "OTEL_SERVICE_NAME", value = "${var.project_name}-chatbot" },
+        { name = "OTEL_PYTHON_DISTRO", value = "aws_distro" },
+        { name = "OTEL_PYTHON_CONFIGURATOR", value = "aws_configurator" },
+        { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
+        { name = "OTEL_TRACES_EXPORTER", value = "otlp" },
+        { name = "OTEL_METRICS_EXPORTER", value = "none" },
+        { name = "OTEL_LOGS_EXPORTER", value = "none" },
+        { name = "OTEL_RESOURCE_ATTRIBUTES", value = "service.name=${var.project_name}-chatbot" },
+        { name = "OTEL_EXPORTER_OTLP_LOGS_HEADERS", value = "x-aws-log-group=/aws/bedrock-agentcore/${var.project_name},x-aws-log-stream=chatbot-logs,x-aws-metric-namespace=bedrock-agentcore" },
+        { name = "CLOUDWATCH_LOG_GROUP", value = "/aws/bedrock-agentcore/${var.project_name}" },
+      ] : []
+    )
 
     logConfiguration = {
       logDriver = "awslogs"
@@ -343,5 +358,35 @@ resource "aws_iam_role_policy" "ecs_task_bedrock" {
         Resource = [aws_bedrock_guardrail.chatbot[0].guardrail_arn]
       }
     ]
+  })
+}
+
+resource "aws_iam_role_policy" "ecs_task_xray" {
+  count = var.enable_knowledge_base && var.enable_observability ? 1 : 0
+  name  = "${var.project_name}-ecs-task-xray"
+  role  = aws_iam_role.ecs_task[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+      Resource = "*"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "ecs_task_cloudwatch_custom" {
+  count = var.enable_knowledge_base && var.enable_observability ? 1 : 0
+  name  = "${var.project_name}-ecs-task-cloudwatch-custom"
+  role  = aws_iam_role.ecs_task[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
+      Resource = ["arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/bedrock-agentcore/*"]
+    }]
   })
 }

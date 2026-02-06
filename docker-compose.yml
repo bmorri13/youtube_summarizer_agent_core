@@ -134,8 +134,9 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
-      # Observability
+      # Observability / OTEL
       - AGENT_OBSERVABILITY_ENABLED=${AGENT_OBSERVABILITY_ENABLED:-false}
+      - OTEL_SERVICE_NAME=youtube-analyzer-chatbot
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     command: python chatbot_server.py
 
