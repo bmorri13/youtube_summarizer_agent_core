@@ -435,6 +435,8 @@ resource "aws_iam_role_policy" "github_actions" {
           "elasticloadbalancing:CreateListener",
           "elasticloadbalancing:DeleteListener",
           "elasticloadbalancing:DescribeListeners",
+          "elasticloadbalancing:DescribeListenerAttributes",
+          "elasticloadbalancing:ModifyListenerAttributes",
           "elasticloadbalancing:ModifyListener",
           "elasticloadbalancing:AddTags",
           "elasticloadbalancing:RemoveTags",
