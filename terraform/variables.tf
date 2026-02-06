@@ -98,7 +98,7 @@ variable "chatbot_model_id" {
 variable "vpc_id" {
   description = "VPC ID for ECS Fargate chatbot deployment"
   type        = string
-  default     = "vpc-0a6b13ecadb3acc47"
+  default     = "vpc-00fa7c3abcd1a7236"
 }
 
 variable "public_subnet_ids" {
