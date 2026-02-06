@@ -234,10 +234,12 @@ resource "aws_ecs_task_definition" "chatbot" {
         { name = "OTEL_PYTHON_DISTRO", value = "aws_distro" },
         { name = "OTEL_PYTHON_CONFIGURATOR", value = "aws_configurator" },
         { name = "OTEL_EXPORTER_OTLP_PROTOCOL", value = "http/protobuf" },
+        { name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value = "https://xray.${var.aws_region}.amazonaws.com/v1/traces" },
         { name = "OTEL_TRACES_EXPORTER", value = "otlp" },
         { name = "OTEL_METRICS_EXPORTER", value = "none" },
         { name = "OTEL_LOGS_EXPORTER", value = "none" },
         { name = "OTEL_RESOURCE_ATTRIBUTES", value = "service.name=${var.project_name}-chatbot" },
+        { name = "OTEL_PYTHON_EXCLUDED_URLS", value = "health" },
         { name = "OTEL_EXPORTER_OTLP_LOGS_HEADERS", value = "x-aws-log-group=/aws/bedrock-agentcore/${var.project_name},x-aws-log-stream=chatbot-logs,x-aws-metric-namespace=bedrock-agentcore" },
         { name = "CLOUDWATCH_LOG_GROUP", value = "/aws/bedrock-agentcore/${var.project_name}" },
       ] : []
