@@ -7,7 +7,7 @@ import uuid
 
 from dotenv import load_dotenv
 import anthropic
-from langfuse.decorators import observe, langfuse_context
+from langfuse import observe, get_client
 
 from tools import (
     ALL_TOOLS,
@@ -109,7 +109,7 @@ def handle_tool_call(tool_name: str, tool_input: dict) -> str:
     else:
         result = {"success": False, "error": f"Unknown tool: {tool_name}"}
 
-    langfuse_context.update_current_observation(
+    get_client().update_current_span(
         metadata={"tool_name": tool_name, "success": result.get("success", True)},
     )
 
@@ -130,9 +130,9 @@ def _llm_call(client, model, system_prompt, tools, messages, turn):
     input_tokens = getattr(response.usage, 'input_tokens', 0)
     output_tokens = getattr(response.usage, 'output_tokens', 0)
 
-    langfuse_context.update_current_observation(
+    get_client().update_current_generation(
         model=model,
-        usage={"input": input_tokens, "output": output_tokens},
+        usage_details={"input_tokens": input_tokens, "output_tokens": output_tokens},
         metadata={"turn": turn, "stop_reason": response.stop_reason},
     )
 
@@ -148,7 +148,7 @@ def run_agent(video_url: str, max_turns: int = 10, session_id: str = None) -> st
     logger = get_logger()
     session_id = session_id or str(uuid.uuid4())
 
-    langfuse_context.update_current_trace(
+    get_client().update_current_trace(
         session_id=session_id,
         metadata={"video_url": video_url},
     )
@@ -215,7 +215,7 @@ def run_agent(video_url: str, max_turns: int = 10, session_id: str = None) -> st
             else:
                 break
 
-        langfuse_context.update_current_trace(
+        get_client().update_current_trace(
             metadata={
                 "video_url": video_url,
                 "total_turns": turn + 1,
@@ -248,7 +248,7 @@ def run_agent_with_transcript(
     logger = get_logger()
     session_id = session_id or str(uuid.uuid4())
 
-    langfuse_context.update_current_trace(
+    get_client().update_current_trace(
         session_id=session_id,
         metadata={"video_url": video_url, "video_id": video_id, "prefetched_transcript": True},
     )
@@ -343,7 +343,7 @@ Proceed directly to:
             else:
                 break
 
-        langfuse_context.update_current_trace(
+        get_client().update_current_trace(
             metadata={
                 "video_url": video_url,
                 "total_turns": turn + 1,

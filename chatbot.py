@@ -9,7 +9,7 @@ import os
 import uuid
 
 import boto3
-from langfuse.decorators import observe, langfuse_context
+from langfuse import observe, get_client
 
 from observability import (
     sanitize_log_value,
@@ -52,7 +52,7 @@ def _get_runtime_client():
     return _bedrock_runtime_client
 
 
-@observe(as_type="retrieval", name="kb_retrieve")
+@observe(as_type="retriever", name="kb_retrieve")
 def retrieve_from_knowledge_base(query: str, kb_id: str = None, max_results: int = None):
     """Retrieve relevant documents from Bedrock Knowledge Base."""
     logger = get_logger()
@@ -89,7 +89,7 @@ def retrieve_from_knowledge_base(query: str, kb_id: str = None, max_results: int
 
     logger.info(f"KB retrieve: {len(results)} results for query: {sanitize_log_value(query, 100)}")
 
-    langfuse_context.update_current_observation(
+    get_client().update_current_span(
         metadata={"kb_id": kb_id, "max_results": max_results, "result_count": len(results)},
     )
 
@@ -125,7 +125,7 @@ def chat(messages: list, session_id: str = None):
     logger = get_logger()
     session_id = session_id or str(uuid.uuid4())
 
-    langfuse_context.update_current_trace(session_id=session_id)
+    get_client().update_current_trace(session_id=session_id)
 
     # Extract latest user message for retrieval
     user_query = ""
@@ -206,11 +206,11 @@ def _converse(system_prompt: str, converse_messages: list):
     response = client.converse(**params)
 
     usage_data = response.get("usage", {})
-    langfuse_context.update_current_observation(
+    get_client().update_current_generation(
         model=CHATBOT_MODEL_ID,
-        usage={
-            "input": usage_data.get("inputTokens", 0),
-            "output": usage_data.get("outputTokens", 0),
+        usage_details={
+            "input_tokens": usage_data.get("inputTokens", 0),
+            "output_tokens": usage_data.get("outputTokens", 0),
         },
         metadata={"stop_reason": response.get("stopReason", "")},
     )
