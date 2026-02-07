@@ -85,15 +85,26 @@ The Lambda handler accepts multiple formats:
 {"process_transcript": true, "video_url": "...", "video_id": "...", "transcript": "..."}
 ```
 
-### Observability Module
-`observability.py` provides tracing and logging for the agent:
+### Observability (Dual: Langfuse + ADOT)
+Two complementary observability layers:
 
-- Uses OpenTelemetry with AWS ADOT for X-Ray/CloudWatch integration
-- `AgentObservability` context manager wraps agent runs
-- `trace_span()` and `trace_function()` for custom tracing
-- `log_agent_event()` for structured CloudWatch logging
-- `sanitize_log_value()` prevents log injection attacks
-- Controlled by `AGENT_OBSERVABILITY_ENABLED=true`
+**Langfuse** (LLM-level observability):
+- `@observe()` decorators on `run_agent()`, `_llm_call()`, `handle_tool_call()` in `agent.py`
+- `@observe()` decorators on `chat()`, `retrieve_from_knowledge_base()`, `_converse()` in `chatbot.py`
+- Tracks prompts, completions, token usage, cost, tool calls in a conversation-level UI
+- Configured via `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` env vars
+- Self-hosted on ECS Fargate + RDS PostgreSQL (conditional on `var.enable_langfuse`)
+- Shares the chatbot ALB via host-based routing (`langfuse.*` host header)
+
+**ADOT/X-Ray** (infrastructure-level tracing):
+- Auto-instrumented via `opentelemetry-instrument` entrypoint in Lambda/ECS Dockerfiles
+- Traces HTTP latency, cold starts, Bedrock API errors
+- Controlled by `var.enable_observability` in Terraform
+
+**`observability.py`** provides shared utilities:
+- `sanitize_log_value()` / `sanitize_log_dict()` — log injection prevention
+- `get_logger()` — structured logging (stdout captured by ECS awslogs / Lambda)
+- `flush_traces()` — ADOT trace flush for Lambda cold shutdown
 
 ### Adding New Tools
 1. Create `tools/my_tool.py` with:
@@ -171,10 +182,12 @@ Located in `terraform/`:
 - `bedrock_kb_sync.tf` - Auto-sync Lambda triggered by S3 events
 - `bedrock_guardrail.tf` - Bedrock Guardrail for chatbot content filtering
 - `ecs_chatbot.tf` - ECS Fargate chatbot: ECR, ALB, security groups, ECS cluster/service/task def, IAM roles
+- `langfuse.tf` - Langfuse LLM observability: RDS PostgreSQL, ECS Fargate, ALB host-based routing, ECR, secrets
 
 Key variables:
-- `enable_observability` - Controls ADOT/AgentCore tracing setup
+- `enable_observability` - Controls ADOT/X-Ray infra tracing setup
 - `enable_knowledge_base` - Controls Bedrock Knowledge Base, S3 Vectors, and ECS chatbot deployment
+- `enable_langfuse` - Controls Langfuse ECS Fargate + RDS PostgreSQL deployment
 
 ## Environment Variables
 
@@ -187,8 +200,9 @@ Optional:
 - `NOTES_LOCAL_DIR` - Directory for local notes (default: `./notes`)
 - `NOTES_S3_BUCKET` - S3 bucket for cloud storage
 - `CLAUDE_MODEL` - Model ID (default: `claude-sonnet-4-20250514`)
-- `AGENT_OBSERVABILITY_ENABLED` - Set `true` for OpenTelemetry tracing + CloudWatch logging
 - `MONITOR_CHANNEL_URLS` - Comma-separated channel URLs for scheduled monitoring
+- `LANGFUSE_HOST` - Langfuse server URL for LLM observability
+- `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` - Langfuse API keys
 - `KNOWLEDGE_BASE_ID` - Bedrock Knowledge Base ID for RAG chatbot
 - `CHATBOT_MODEL_ID` - Bedrock model for chatbot (default: `us.anthropic.claude-sonnet-4-5-20250929-v1:0`)
 - `BEDROCK_GUARDRAIL_ID` / `BEDROCK_GUARDRAIL_VERSION` - Bedrock Guardrail config

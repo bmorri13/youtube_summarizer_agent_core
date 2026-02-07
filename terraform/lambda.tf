@@ -20,7 +20,7 @@ resource "aws_lambda_function" "main" {
         # Note: AWS_REGION is automatically provided by Lambda
       },
       var.enable_observability ? {
-        # AWS ADOT configuration for Bedrock AgentCore Observability
+        # AWS ADOT configuration for infra-level tracing (X-Ray)
         OTEL_SERVICE_NAME           = var.project_name
         OTEL_PYTHON_DISTRO          = "aws_distro"
         OTEL_PYTHON_CONFIGURATOR    = "aws_configurator"
@@ -28,15 +28,8 @@ resource "aws_lambda_function" "main" {
         OTEL_TRACES_EXPORTER        = "otlp"
         OTEL_METRICS_EXPORTER       = "none"
         OTEL_LOGS_EXPORTER          = "none"
-
-        # Required by AWS docs for AgentCore Observability
-        OTEL_RESOURCE_ATTRIBUTES        = "service.name=${var.project_name}"
-        OTEL_EXPORTER_OTLP_LOGS_HEADERS = "x-aws-log-group=/aws/bedrock-agentcore/${var.project_name},x-aws-log-stream=runtime-logs,x-aws-metric-namespace=bedrock-agentcore"
-
-        # CloudWatch logging
-        CLOUDWATCH_LOG_GROUP        = "/aws/bedrock-agentcore/${var.project_name}"
+        OTEL_RESOURCE_ATTRIBUTES    = "service.name=${var.project_name}"
         LOG_LEVEL                   = "INFO"
-        AGENT_OBSERVABILITY_ENABLED = "true"
       } : {},
       var.enable_knowledge_base ? {
         # RAG Chatbot configuration
@@ -45,6 +38,11 @@ resource "aws_lambda_function" "main" {
         BEDROCK_GUARDRAIL_ID      = aws_bedrock_guardrail.chatbot[0].guardrail_id
         BEDROCK_GUARDRAIL_VERSION = aws_bedrock_guardrail_version.chatbot[0].version
         KB_MAX_RESULTS            = "5"
+      } : {},
+      var.enable_langfuse ? {
+        LANGFUSE_HOST       = "https://${var.langfuse_host_header}"
+        LANGFUSE_PUBLIC_KEY = "set-after-langfuse-project-creation"
+        LANGFUSE_SECRET_KEY = "set-after-langfuse-project-creation"
       } : {}
     )
   }

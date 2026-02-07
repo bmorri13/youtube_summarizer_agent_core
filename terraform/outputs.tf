@@ -23,11 +23,6 @@ output "cloudwatch_log_group" {
   value       = aws_cloudwatch_log_group.lambda.name
 }
 
-output "agent_log_group" {
-  description = "CloudWatch log group for agent observability"
-  value       = var.enable_observability ? aws_cloudwatch_log_group.agent[0].name : null
-}
-
 # Knowledge Base outputs
 output "knowledge_base_id" {
   description = "Bedrock Knowledge Base ID"
@@ -79,4 +74,21 @@ output "chatbot_cluster_name" {
 output "chatbot_service_name" {
   description = "ECS service name for CI/CD deployments"
   value       = var.enable_knowledge_base ? aws_ecs_service.chatbot[0].name : null
+}
+
+# Langfuse outputs
+output "langfuse_url" {
+  description = "Langfuse URL (via ALB host-based routing)"
+  value       = var.enable_langfuse ? "https://${var.langfuse_host_header}" : null
+}
+
+output "langfuse_ecr_repository_url" {
+  description = "ECR repository URL for Langfuse image"
+  value       = var.enable_langfuse ? aws_ecr_repository.langfuse[0].repository_url : null
+}
+
+output "langfuse_rds_endpoint" {
+  description = "RDS endpoint for Langfuse PostgreSQL"
+  value       = var.enable_langfuse ? aws_db_instance.langfuse[0].endpoint : null
+  sensitive   = true
 }

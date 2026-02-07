@@ -13,13 +13,11 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from opentelemetry import trace
 from pydantic import BaseModel
 
 load_dotenv()
 
 from chatbot import chat, chat_stream
-from observability import sanitize_log_value
 
 
 # --- Pydantic Models ---
@@ -122,11 +120,6 @@ async def chat_endpoint(request: ChatRequest):
 
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
 
-    span = trace.get_current_span()
-    user_query = messages[-1]["content"] if messages and messages[-1]["role"] == "user" else ""
-    if span and user_query:
-        span.set_attribute("user.query", sanitize_log_value(user_query, 500))
-
     result = chat(messages, session_id=request.session_id)
     return ChatResponse(**result)
 
@@ -138,11 +131,6 @@ async def chat_stream_endpoint(request: ChatRequest):
         raise HTTPException(status_code=503, detail="Knowledge Base not configured")
 
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
-
-    span = trace.get_current_span()
-    user_query = messages[-1]["content"] if messages and messages[-1]["role"] == "user" else ""
-    if span and user_query:
-        span.set_attribute("user.query", sanitize_log_value(user_query, 500))
 
     return StreamingResponse(
         chat_stream(messages, session_id=request.session_id),

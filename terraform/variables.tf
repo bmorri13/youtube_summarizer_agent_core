@@ -118,3 +118,15 @@ variable "chatbot_fargate_memory" {
   type        = number
   default     = 2048
 }
+
+variable "enable_langfuse" {
+  description = "Enable Langfuse LLM observability (ECS Fargate + RDS PostgreSQL)"
+  type        = bool
+  default     = false
+}
+
+variable "langfuse_host_header" {
+  description = "Host header for ALB routing to Langfuse (e.g., langfuse.yourdomain.com)"
+  type        = string
+  default     = "langfuse.localhost"
+}

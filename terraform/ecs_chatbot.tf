@@ -228,6 +228,11 @@ resource "aws_ecs_task_definition" "chatbot" {
         { name = "AWS_REGION", value = var.aws_region },
         { name = "LOG_LEVEL", value = "INFO" },
       ],
+      var.enable_langfuse ? [
+        { name = "LANGFUSE_HOST", value = "https://${var.langfuse_host_header}" },
+        { name = "LANGFUSE_PUBLIC_KEY", value = "set-after-langfuse-project-creation" },
+        { name = "LANGFUSE_SECRET_KEY", value = "set-after-langfuse-project-creation" },
+      ] : [],
       var.enable_observability ? [
         { name = "OTEL_SERVICE_NAME", value = "${var.project_name}-chatbot" },
         { name = "OTEL_PYTHON_DISTRO", value = "aws_distro" },
@@ -376,17 +381,3 @@ resource "aws_iam_role_policy" "ecs_task_xray" {
   })
 }
 
-resource "aws_iam_role_policy" "ecs_task_cloudwatch_custom" {
-  count = var.enable_knowledge_base && var.enable_observability ? 1 : 0
-  name  = "${var.project_name}-ecs-task-cloudwatch-custom"
-  role  = aws_iam_role.ecs_task[0].id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
-      Resource = ["arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/bedrock-agentcore/*"]
-    }]
-  })
-}

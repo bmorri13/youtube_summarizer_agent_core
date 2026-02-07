@@ -71,28 +71,6 @@ resource "aws_iam_role_policy" "lambda_xray" {
   })
 }
 
-# Custom CloudWatch log group for observability.py
-resource "aws_iam_role_policy" "lambda_cloudwatch_custom" {
-  count = var.enable_observability ? 1 : 0
-  name  = "${var.project_name}-cloudwatch-custom"
-  role  = aws_iam_role.lambda.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "logs:CreateLogGroup",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents"
-      ]
-      Resource = [
-        "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/bedrock-agentcore/*"
-      ]
-    }]
-  })
-}
-
 # Bedrock chatbot permissions (conditional on Knowledge Base)
 resource "aws_iam_role_policy" "lambda_bedrock_chatbot" {
   count = var.enable_knowledge_base ? 1 : 0

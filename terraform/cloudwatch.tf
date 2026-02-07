@@ -4,13 +4,6 @@ resource "aws_cloudwatch_log_group" "lambda" {
   retention_in_days = var.log_retention_days
 }
 
-# Agent observability log group (for custom structured logs)
-resource "aws_cloudwatch_log_group" "agent" {
-  count             = var.enable_observability ? 1 : 0
-  name              = "/aws/bedrock-agentcore/${var.project_name}"
-  retention_in_days = var.log_retention_days
-}
-
 # SNS Topic for alarms (optional)
 resource "aws_sns_topic" "alarms" {
   count = var.enable_alarms ? 1 : 0
