@@ -1,12 +1,25 @@
 """Note saving tool with local filesystem and S3 backends."""
 
 import json
+import logging
 import os
 import re
 from datetime import datetime
 
 
+logger = logging.getLogger(__name__)
+
 PROCESSED_VIDEOS_FILE = "processed_videos.json"
+AWS_REGION = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+
+
+class ProcessedIndexLoadError(Exception):
+    """Raised when the processed videos index cannot be loaded from storage.
+
+    This prevents callers from writing back incomplete data that would
+    overwrite the existing index.
+    """
+    pass
 
 
 # Tool definition for Claude API
@@ -69,7 +82,7 @@ def save_to_s3(title: str, content: str, bucket: str) -> str:
     """Save note to S3 bucket."""
     import boto3
 
-    s3 = boto3.client("s3")
+    s3 = boto3.client("s3", region_name=AWS_REGION)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{timestamp}_{sanitize_filename(title)}.md"
@@ -168,6 +181,11 @@ def load_processed_index() -> dict:
 
     Returns:
         dict with 'videos' and 'channels' keys
+
+    Raises:
+        ProcessedIndexLoadError: If the index cannot be loaded due to a
+            transient or unexpected error (NOT a missing file). This prevents
+            callers from writing back incomplete data.
     """
     backend = os.environ.get("NOTES_BACKEND", "local")
 
@@ -180,8 +198,11 @@ def load_processed_index() -> dict:
             return _load_index_from_local()
     except FileNotFoundError:
         return empty_index
-    except Exception:
-        return empty_index
+    except Exception as e:
+        logger.error(f"Failed to load processed index: {e}", exc_info=True)
+        raise ProcessedIndexLoadError(
+            f"Could not load processed index: {e}"
+        ) from e
 
 
 def _load_index_from_local() -> dict:
@@ -204,7 +225,7 @@ def _load_index_from_s3() -> dict:
     if not bucket:
         raise ValueError("NOTES_S3_BUCKET not configured")
 
-    s3 = boto3.client("s3")
+    s3 = boto3.client("s3", region_name=AWS_REGION)
     key = f"metadata/{PROCESSED_VIDEOS_FILE}"
 
     try:
@@ -253,7 +274,7 @@ def _save_index_to_s3(index: dict) -> None:
     if not bucket:
         raise ValueError("NOTES_S3_BUCKET not configured")
 
-    s3 = boto3.client("s3")
+    s3 = boto3.client("s3", region_name=AWS_REGION)
     key = f"metadata/{PROCESSED_VIDEOS_FILE}"
 
     s3.put_object(
@@ -267,13 +288,22 @@ def _save_index_to_s3(index: dict) -> None:
 def is_video_processed(video_id: str) -> bool:
     """Check if a video has already been processed.
 
+    Returns True (safe default) if the index cannot be loaded, to prevent
+    re-processing on transient errors.
+
     Args:
         video_id: YouTube video ID
 
     Returns:
-        True if video has been processed, False otherwise
+        True if video has been processed or index can't be loaded, False otherwise
     """
-    index = load_processed_index()
+    try:
+        index = load_processed_index()
+    except ProcessedIndexLoadError:
+        logger.error(
+            f"Assuming video {video_id} is processed: could not load index safely"
+        )
+        return True
     return video_id in index.get("videos", {})
 
 
@@ -289,6 +319,9 @@ def mark_video_processed(
     Updates existing entry if present (preserves processing_started timestamp
     from when local_fetcher marked it as "processing").
 
+    If the index cannot be loaded (transient S3 error), the write is skipped
+    to prevent overwriting the existing index with incomplete data.
+
     Args:
         video_id: YouTube video ID
         title: Video title
@@ -296,7 +329,14 @@ def mark_video_processed(
         channel_name: Channel name
         note_path: Path where the note was saved
     """
-    index = load_processed_index()
+    try:
+        index = load_processed_index()
+    except ProcessedIndexLoadError:
+        logger.error(
+            f"Skipping mark_video_processed for {video_id}: "
+            "could not load index safely"
+        )
+        return
 
     if "videos" not in index:
         index["videos"] = {}
@@ -325,13 +365,23 @@ def update_channel_checked(
 ) -> None:
     """Update the last checked time for a channel.
 
+    If the index cannot be loaded (transient S3 error), the write is skipped
+    to prevent overwriting the existing index with incomplete data.
+
     Args:
         channel_id: YouTube channel ID
         channel_name: Channel name
         channel_url: Channel URL
         last_video_id: ID of the latest video found
     """
-    index = load_processed_index()
+    try:
+        index = load_processed_index()
+    except ProcessedIndexLoadError:
+        logger.error(
+            f"Skipping update_channel_checked for {channel_id}: "
+            "could not load index safely"
+        )
+        return
 
     if "channels" not in index:
         index["channels"] = {}

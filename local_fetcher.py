@@ -9,6 +9,7 @@ them to AWS Lambda for the expensive AI processing.
 import json
 import os
 import sys
+import time
 
 import boto3
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -16,34 +17,45 @@ from youtube_transcript_api import YouTubeTranscriptApi
 from tools.channel import get_latest_channel_video
 
 
-def is_video_processed_s3(video_id: str) -> bool:
+def is_video_processed_s3(video_id: str, max_retries: int = 2) -> bool:
     """Check if video was already processed by checking S3.
+
+    Uses retry logic for transient S3 errors. On persistent failure,
+    returns True (safe default: skip rather than risk re-processing).
 
     Args:
         video_id: YouTube video ID to check
+        max_retries: Number of retries on transient errors
 
     Returns:
-        True if video has already been processed, False otherwise
+        True if video has already been processed or check failed (safe default)
+        False only if confirmed not processed
     """
     bucket = os.getenv("NOTES_S3_BUCKET")
 
     if not bucket:
         print("  Warning: NOTES_S3_BUCKET not set, cannot check processed status")
-        return False
+        return True  # Safe default: skip
 
     s3_client = boto3.client("s3", region_name=os.getenv("AWS_REGION", "us-east-1"))
 
-    try:
-        # Check if processed_videos.json exists and contains this video
-        # Note: Lambda saves to metadata/processed_videos.json
-        response = s3_client.get_object(Bucket=bucket, Key="metadata/processed_videos.json")
-        processed = json.loads(response["Body"].read().decode("utf-8"))
-        return video_id in processed.get("videos", {})
-    except s3_client.exceptions.NoSuchKey:
-        return False
-    except Exception as e:
-        print(f"  Warning: Could not check S3: {e}")
-        return False
+    for attempt in range(max_retries + 1):
+        try:
+            response = s3_client.get_object(
+                Bucket=bucket, Key="metadata/processed_videos.json"
+            )
+            processed = json.loads(response["Body"].read().decode("utf-8"))
+            return video_id in processed.get("videos", {})
+        except s3_client.exceptions.NoSuchKey:
+            return False  # Index doesn't exist yet, video is definitely new
+        except Exception as e:
+            if attempt < max_retries:
+                print(f"  Warning: S3 check failed (attempt {attempt + 1}), retrying: {e}")
+                time.sleep(1)
+            else:
+                print(f"  Error: Could not check S3 after {max_retries + 1} attempts: {e}")
+                print("  Assuming video is already processed (safe default)")
+                return True  # Safe default: skip rather than re-process
 
 
 def mark_video_processing_s3(

@@ -285,10 +285,14 @@ def run_agent_with_transcript(
     logger = get_logger()
     session_id = session_id or str(uuid.uuid4())
 
-    # Filter out get_transcript tool since transcript is already provided
+    # Filter out tools that shouldn't be used with pre-fetched transcripts:
+    # - get_transcript: transcript is already provided
+    # - get_latest_channel_video: would trigger update_channel_checked() which
+    #   does a read-modify-write on processed_videos.json, risking data loss
+    excluded_tools = {"get_transcript", "get_latest_channel_video"}
     tools_without_transcript = [
         tool for tool in ALL_TOOLS
-        if tool["name"] != "get_transcript"
+        if tool["name"] not in excluded_tools
     ]
 
     # Create a modified system prompt that includes the transcript
