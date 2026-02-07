@@ -39,15 +39,38 @@ def is_video_processed_s3(video_id: str, max_retries: int = 2) -> bool:
 
     s3_client = boto3.client("s3", region_name=os.getenv("AWS_REGION", "us-east-1"))
 
+    key = "metadata/processed_videos.json"
+
     for attempt in range(max_retries + 1):
         try:
-            response = s3_client.get_object(
-                Bucket=bucket, Key="metadata/processed_videos.json"
-            )
-            processed = json.loads(response["Body"].read().decode("utf-8"))
-            return video_id in processed.get("videos", {})
+            response = s3_client.get_object(Bucket=bucket, Key=key)
+            raw_body = response["Body"].read().decode("utf-8")
+            processed = json.loads(raw_body)
+            videos = processed.get("videos", {})
+            found = video_id in videos
+            print(f"  S3 check: {key} has {len(videos)} videos, "
+                  f"{video_id} found={found}")
+            return found
         except s3_client.exceptions.NoSuchKey:
-            return False  # Index doesn't exist yet, video is definitely new
+            print(f"  S3 check: {key} does not exist, checking fallback")
+            # Fallback: check old location for backwards compatibility
+            try:
+                response = s3_client.get_object(
+                    Bucket=bucket, Key="notes/processed_videos.json"
+                )
+                raw_body = response["Body"].read().decode("utf-8")
+                processed = json.loads(raw_body)
+                videos = processed.get("videos", {})
+                found = video_id in videos
+                print(f"  S3 check: fallback notes/ has {len(videos)} videos, "
+                      f"{video_id} found={found}")
+                return found
+            except s3_client.exceptions.NoSuchKey:
+                print("  S3 check: no index file in either location")
+                return False
+            except Exception as e:
+                print(f"  S3 check: fallback read failed: {e}")
+                return False
         except Exception as e:
             if attempt < max_retries:
                 print(f"  Warning: S3 check failed (attempt {attempt + 1}), retrying: {e}")
@@ -86,12 +109,18 @@ def mark_video_processing_s3(
     key = "metadata/processed_videos.json"
 
     try:
-        # Load current index
+        # Load current index (check metadata/ then fallback to notes/)
         try:
             response = s3_client.get_object(Bucket=bucket, Key=key)
             processed = json.loads(response["Body"].read().decode("utf-8"))
         except s3_client.exceptions.NoSuchKey:
-            processed = {"videos": {}, "channels": {}}
+            try:
+                response = s3_client.get_object(
+                    Bucket=bucket, Key="notes/processed_videos.json"
+                )
+                processed = json.loads(response["Body"].read().decode("utf-8"))
+            except s3_client.exceptions.NoSuchKey:
+                processed = {"videos": {}, "channels": {}}
 
         # Double-check not already present (in case of race)
         if video_id in processed.get("videos", {}):

@@ -9,8 +9,6 @@ python-dotenv>=1.0.0
 # AWS Bedrock AgentCore Observability (using ADOT)
 # aws-opentelemetry-distro brings in all required OpenTelemetry dependencies
 aws-opentelemetry-distro
-watchtower>=3.0.0
-
 # LLM Auto-Instrumentation for AgentCore GenAI Observability
 # Captures gen_ai.prompt, gen_ai.completion, and full request/response details
 opentelemetry-instrumentation-anthropic

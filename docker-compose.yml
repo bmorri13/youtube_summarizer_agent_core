@@ -154,6 +154,7 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - LAMBDA_FUNCTION_NAME=${LAMBDA_FUNCTION_NAME:-youtube-analyzer}
       - NOTES_S3_BUCKET=${NOTES_S3_BUCKET}
+      - NOTES_BACKEND=s3
     volumes:
       - fetcher-logs:/var/log
     restart: unless-stopped

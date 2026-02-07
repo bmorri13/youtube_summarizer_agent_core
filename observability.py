@@ -1,13 +1,13 @@
 """AWS Bedrock AgentCore Observability - Tracing and Logging.
 
 This module provides observability features for the YouTube Analyzer Agent,
-exporting traces to AWS Bedrock AgentCore via OTLP.
+using AWS ADOT auto-instrumentation for trace export.
 
 Features:
-- OTLP trace export to AWS (for Bedrock AgentCore dashboard)
-- CloudWatch logging via watchtower
+- ADOT auto-instrumented tracing (via opentelemetry-instrument entrypoint)
 - gen_ai.* semantic conventions for LLM tracing
 - Custom span helpers for agent-specific tracing
+- Structured JSON logging (stdout captured by ECS awslogs / Lambda)
 - Log injection prevention via input sanitization
 """
 
@@ -20,38 +20,16 @@ from functools import wraps
 from typing import Callable, Optional, Any
 from contextlib import contextmanager
 
-import boto3
-from botocore.auth import SigV4Auth
-from botocore.awsrequest import AWSRequest
-
 # OpenTelemetry imports
 from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor
-from opentelemetry.sdk.resources import Resource
 from opentelemetry.trace import Status, StatusCode
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-
-# CloudWatch logging
-try:
-    import watchtower
-    WATCHTOWER_AVAILABLE = True
-except ImportError:
-    WATCHTOWER_AVAILABLE = False
 
 
 # Configuration
 SERVICE_NAME = os.environ.get("OTEL_SERVICE_NAME", "youtube-analyzer-agent")
-LOG_GROUP_NAME = os.environ.get("CLOUDWATCH_LOG_GROUP", "/aws/bedrock-agentcore/youtube-analyzer")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 OBSERVABILITY_ENABLED = os.environ.get("AGENT_OBSERVABILITY_ENABLED", "").lower() == "true"
-
-# OTLP endpoint for AWS
-OTLP_ENDPOINT = os.environ.get(
-    "OTEL_EXPORTER_OTLP_ENDPOINT",
-    f"https://xray.{AWS_REGION}.amazonaws.com"
-)
 
 # Global state
 _logger = None
@@ -128,29 +106,6 @@ def sanitize_log_dict(data: dict, max_length: int = 1000) -> dict:
     return sanitized
 
 
-class AWSSigV4OTLPExporter(OTLPSpanExporter):
-    """OTLP Exporter with AWS SigV4 authentication."""
-
-    def __init__(self, endpoint: str, region: str = "us-east-1"):
-        self._region = region
-        self._session = boto3.Session()
-        self._credentials = self._session.get_credentials()
-        super().__init__(endpoint=endpoint)
-
-    def _get_signed_headers(self, body: bytes) -> dict:
-        """Generate SigV4 signed headers for the request."""
-        request = AWSRequest(
-            method="POST",
-            url=f"{self._endpoint}/v1/traces",
-            data=body,
-            headers={
-                "Content-Type": "application/x-protobuf",
-            }
-        )
-        SigV4Auth(self._credentials, "xray", self._region).add_auth(request)
-        return dict(request.headers)
-
-
 def _init_tracer():
     """Initialize the OpenTelemetry tracer using AWS ADOT auto-configuration."""
     global _tracer_initialized
@@ -163,39 +118,17 @@ def _init_tracer():
         _tracer_initialized = True
         return
 
-    try:
-        # Check if ADOT auto-configuration is available
-        # When OTEL_PYTHON_DISTRO=aws_distro is set, ADOT handles everything
-        if os.environ.get("OTEL_PYTHON_DISTRO") == "aws_distro":
-            print("[Observability] Using AWS ADOT auto-configuration for AgentCore")
-            _tracer_initialized = True
-            return
+    # When OTEL_PYTHON_DISTRO=aws_distro is set, ADOT handles everything
+    if os.environ.get("OTEL_PYTHON_DISTRO") == "aws_distro":
+        print("[Observability] Using AWS ADOT auto-configuration for AgentCore")
+    else:
+        print("[Observability] No ADOT distro configured — traces will be no-ops")
 
-        # Fallback: Manual configuration for local development
-        from opentelemetry.sdk.resources import Resource
-        from opentelemetry.sdk.trace import TracerProvider
-
-        resource = Resource.create({
-            "service.name": SERVICE_NAME,
-            "service.version": "1.0.0",
-            "deployment.environment": os.environ.get("ENVIRONMENT", "prod"),
-            "cloud.provider": "aws",
-            "cloud.region": AWS_REGION,
-        })
-
-        provider = TracerProvider(resource=resource)
-        trace.set_tracer_provider(provider)
-
-        print("[Observability] Manual tracer configuration (no ADOT)")
-        _tracer_initialized = True
-
-    except Exception as e:
-        print(f"[Observability] Failed to initialize tracer: {e}")
-        _tracer_initialized = True
+    _tracer_initialized = True
 
 
 def setup_logging() -> logging.Logger:
-    """Initialize CloudWatch logging."""
+    """Initialize logging with console handler (stdout captured by ECS awslogs / Lambda)."""
     global _logger
 
     if _logger is not None:
@@ -216,24 +149,6 @@ def setup_logging() -> logging.Logger:
     )
     console_handler.setFormatter(formatter)
     _logger.addHandler(console_handler)
-
-    # CloudWatch handler for AWS deployment
-    if WATCHTOWER_AVAILABLE and OBSERVABILITY_ENABLED:
-        try:
-            logs_client = boto3.client('logs', region_name=AWS_REGION)
-
-            cloudwatch_handler = watchtower.CloudWatchLogHandler(
-                log_group_name=LOG_GROUP_NAME,
-                log_stream_name=f"agent-{datetime.now().strftime('%Y-%m-%d-%H')}",
-                boto3_client=logs_client,
-                create_log_group=True,
-            )
-            cloudwatch_handler.setLevel(logging.INFO)
-            cloudwatch_handler.setFormatter(logging.Formatter('%(message)s'))
-            _logger.addHandler(cloudwatch_handler)
-            print(f"[Observability] CloudWatch logging enabled: {LOG_GROUP_NAME}")
-        except Exception as e:
-            print(f"[Observability] Failed to setup CloudWatch logging: {e}")
 
     return _logger
 
