@@ -253,3 +253,20 @@ resource "aws_lb_listener_rule" "langfuse" {
     }
   }
 }
+
+resource "aws_lb_listener_rule" "langfuse_https" {
+  count        = var.enable_langfuse && var.route53_zone_id != "" ? 1 : 0
+  listener_arn = aws_lb_listener.chatbot_https[0].arn
+  priority     = 10
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.langfuse[0].arn
+  }
+
+  condition {
+    host_header {
+      values = [var.langfuse_host_header]
+    }
+  }
+}

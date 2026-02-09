@@ -79,6 +79,22 @@ resource "aws_security_group" "chatbot_alb" {
     ipv6_cidr_blocks = local.cloudflare_ipv6_ranges
   }
 
+  ingress {
+    description = "HTTPS from Cloudflare IPv4"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = local.cloudflare_ipv4_ranges
+  }
+
+  ingress {
+    description      = "HTTPS from Cloudflare IPv6"
+    from_port        = 443
+    to_port          = 443
+    protocol         = "tcp"
+    ipv6_cidr_blocks = local.cloudflare_ipv6_ranges
+  }
+
   egress {
     description = "All outbound"
     from_port   = 0
@@ -165,6 +181,20 @@ resource "aws_lb_listener" "chatbot" {
   load_balancer_arn = aws_lb.chatbot[0].arn
   port              = 80
   protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.chatbot[0].arn
+  }
+}
+
+resource "aws_lb_listener" "chatbot_https" {
+  count             = var.enable_knowledge_base && var.route53_zone_id != "" ? 1 : 0
+  load_balancer_arn = aws_lb.chatbot[0].arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = aws_acm_certificate_validation.alb[0].certificate_arn
 
   default_action {
     type             = "forward"
