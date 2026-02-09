@@ -1,12 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-# --- Install Docker + EC2 Instance Connect + ensure SSM agent runs ---
-dnf install -y docker ec2-instance-connect
+# --- Install Docker + management agents ---
+dnf install -y docker amazon-ssm-agent ec2-instance-connect
 systemctl enable docker
 systemctl start docker
-systemctl enable amazon-ssm-agent
-systemctl start amazon-ssm-agent
+systemctl enable amazon-ssm-agent || true
+systemctl start amazon-ssm-agent || true
 
 # --- Install Docker Compose v2 plugin ---
 mkdir -p /usr/local/lib/docker/cli-plugins
