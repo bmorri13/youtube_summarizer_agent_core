@@ -165,7 +165,8 @@ resource "aws_instance" "langfuse" {
   vpc_security_group_ids = [aws_security_group.langfuse_ec2[0].id]
   iam_instance_profile   = aws_iam_instance_profile.langfuse_ec2[0].name
 
-  associate_public_ip_address = true
+  associate_public_ip_address  = true
+  user_data_replace_on_change = true
 
   root_block_device {
     volume_size = 30
