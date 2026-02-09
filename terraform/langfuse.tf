@@ -95,7 +95,7 @@ data "aws_ami" "amazon_linux_2023" {
 resource "aws_security_group" "langfuse_ec2" {
   count       = var.enable_langfuse ? 1 : 0
   name        = "${var.project_name}-langfuse-ec2"
-  description = "Langfuse EC2 — port 3000 from ALB"
+  description = "Langfuse EC2 - port 3000 from ALB"
   vpc_id      = var.vpc_id
 
   ingress {
