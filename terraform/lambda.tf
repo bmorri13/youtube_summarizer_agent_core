@@ -41,8 +41,8 @@ resource "aws_lambda_function" "main" {
       } : {},
       var.enable_langfuse ? {
         LANGFUSE_HOST       = "https://${var.langfuse_host_header}"
-        LANGFUSE_PUBLIC_KEY = "set-after-langfuse-project-creation"
-        LANGFUSE_SECRET_KEY = "set-after-langfuse-project-creation"
+        LANGFUSE_PUBLIC_KEY = local.langfuse_public_key
+        LANGFUSE_SECRET_KEY = local.langfuse_secret_key
       } : {}
     )
   }

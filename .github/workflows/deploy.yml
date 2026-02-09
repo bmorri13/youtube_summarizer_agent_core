@@ -34,6 +34,7 @@ env:
   TF_VAR_monitor_channel_urls: ${{ secrets.MONITOR_CHANNEL_URLS }}
   TF_VAR_enable_scheduled_monitoring: "false"
   TF_VAR_schedule_expression: "rate(30 minutes)"
+  TF_VAR_langfuse_admin_password: ${{ secrets.LANGFUSE_ADMIN_PASSWORD }}
 
 jobs:
   # ===========================================

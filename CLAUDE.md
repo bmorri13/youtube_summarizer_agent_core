@@ -93,8 +93,10 @@ Two complementary observability layers:
 - `@observe()` decorators on `chat()`, `retrieve_from_knowledge_base()`, `_converse()` in `chatbot.py`
 - Tracks prompts, completions, token usage, cost, tool calls in a conversation-level UI
 - Configured via `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` env vars
-- Self-hosted on ECS Fargate + RDS PostgreSQL (conditional on `var.enable_langfuse`)
+- Self-hosted Langfuse v3 on EC2 (t3.medium) running Docker Compose with 6 services: web, worker, PostgreSQL, Redis, ClickHouse, MinIO (conditional on `var.enable_langfuse`)
+- Auto-init creates org/project/API keys on first boot; Terraform generates API keys and injects them into Lambda + chatbot env vars
 - Shares the chatbot ALB via host-based routing (`langfuse.*` host header)
+- Connect via SSM Session Manager: `aws ssm start-session --target <instance-id>`
 
 **ADOT/X-Ray** (infrastructure-level tracing):
 - Auto-instrumented via `opentelemetry-instrument` entrypoint in Lambda/ECS Dockerfiles
@@ -182,12 +184,12 @@ Located in `terraform/`:
 - `bedrock_kb_sync.tf` - Auto-sync Lambda triggered by S3 events
 - `bedrock_guardrail.tf` - Bedrock Guardrail for chatbot content filtering
 - `ecs_chatbot.tf` - ECS Fargate chatbot: ECR, ALB, security groups, ECS cluster/service/task def, IAM roles
-- `langfuse.tf` - Langfuse LLM observability: RDS PostgreSQL, ECS Fargate, ALB host-based routing, ECR, secrets
+- `langfuse.tf` - Langfuse v3 LLM observability: EC2 Docker Compose (6 services), ALB host-based routing, auto-init API keys
 
 Key variables:
 - `enable_observability` - Controls ADOT/X-Ray infra tracing setup
 - `enable_knowledge_base` - Controls Bedrock Knowledge Base, S3 Vectors, and ECS chatbot deployment
-- `enable_langfuse` - Controls Langfuse ECS Fargate + RDS PostgreSQL deployment
+- `enable_langfuse` - Controls Langfuse v3 EC2 Docker Compose deployment
 
 ## Environment Variables
 

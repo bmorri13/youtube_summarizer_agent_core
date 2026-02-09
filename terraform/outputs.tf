@@ -82,13 +82,19 @@ output "langfuse_url" {
   value       = var.enable_langfuse ? "https://${var.langfuse_host_header}" : null
 }
 
-output "langfuse_ecr_repository_url" {
-  description = "ECR repository URL for Langfuse image"
-  value       = var.enable_langfuse ? aws_ecr_repository.langfuse[0].repository_url : null
+output "langfuse_instance_id" {
+  description = "EC2 instance ID (connect via SSM Session Manager)"
+  value       = var.enable_langfuse ? aws_instance.langfuse[0].id : null
 }
 
-output "langfuse_rds_endpoint" {
-  description = "RDS endpoint for Langfuse PostgreSQL"
-  value       = var.enable_langfuse ? aws_db_instance.langfuse[0].endpoint : null
+output "langfuse_public_key" {
+  description = "Langfuse API public key (auto-generated)"
+  value       = var.enable_langfuse ? local.langfuse_public_key : null
+  sensitive   = true
+}
+
+output "langfuse_secret_key" {
+  description = "Langfuse API secret key (auto-generated)"
+  value       = var.enable_langfuse ? local.langfuse_secret_key : null
   sensitive   = true
 }

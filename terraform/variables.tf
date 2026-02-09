@@ -120,7 +120,7 @@ variable "chatbot_fargate_memory" {
 }
 
 variable "enable_langfuse" {
-  description = "Enable Langfuse LLM observability (ECS Fargate + RDS PostgreSQL)"
+  description = "Enable Langfuse v3 LLM observability (EC2 Docker Compose)"
   type        = bool
   default     = false
 }
@@ -129,4 +129,23 @@ variable "langfuse_host_header" {
   description = "Host header for ALB routing to Langfuse (e.g., langfuse.yourdomain.com)"
   type        = string
   default     = "langfuse.localhost"
+}
+
+variable "langfuse_instance_type" {
+  description = "EC2 instance type for Langfuse (needs 4GB+ RAM)"
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "langfuse_admin_email" {
+  description = "Admin user email for Langfuse web UI"
+  type        = string
+  default     = "admin@localhost"
+}
+
+variable "langfuse_admin_password" {
+  description = "Admin user password for Langfuse web UI"
+  type        = string
+  sensitive   = true
+  default     = ""
 }

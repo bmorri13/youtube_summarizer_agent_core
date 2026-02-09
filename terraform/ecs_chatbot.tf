@@ -230,8 +230,8 @@ resource "aws_ecs_task_definition" "chatbot" {
       ],
       var.enable_langfuse ? [
         { name = "LANGFUSE_HOST", value = "https://${var.langfuse_host_header}" },
-        { name = "LANGFUSE_PUBLIC_KEY", value = "set-after-langfuse-project-creation" },
-        { name = "LANGFUSE_SECRET_KEY", value = "set-after-langfuse-project-creation" },
+        { name = "LANGFUSE_PUBLIC_KEY", value = local.langfuse_public_key },
+        { name = "LANGFUSE_SECRET_KEY", value = local.langfuse_secret_key },
       ] : [],
       var.enable_observability ? [
         { name = "OTEL_SERVICE_NAME", value = "${var.project_name}-chatbot" },

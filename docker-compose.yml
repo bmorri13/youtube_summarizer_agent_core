@@ -21,14 +21,14 @@ services:
       - SLACK_DEFAULT_CHANNEL=${SLACK_DEFAULT_CHANNEL:-#youtube-summaries}
       - NOTES_BACKEND=local
       - NOTES_LOCAL_DIR=/app/notes
-      # AWS AgentCore Observability
-      - AGENT_OBSERVABILITY_ENABLED=${AGENT_OBSERVABILITY_ENABLED:-false}
-      - OTEL_SERVICE_NAME=youtube-analyzer-agent
-      - CLOUDWATCH_LOG_GROUP=${CLOUDWATCH_LOG_GROUP:-/aws/bedrock-agentcore/youtube-analyzer}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      # Langfuse LLM Observability
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
     volumes:
       - ./notes:/app/notes
       - ./.env:/app/.env:ro
@@ -46,14 +46,14 @@ services:
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
       - NOTES_BACKEND=local
       - NOTES_LOCAL_DIR=/app/notes
-      # AWS AgentCore Observability
-      - AGENT_OBSERVABILITY_ENABLED=${AGENT_OBSERVABILITY_ENABLED:-false}
-      - OTEL_SERVICE_NAME=youtube-analyzer-agent
-      - CLOUDWATCH_LOG_GROUP=${CLOUDWATCH_LOG_GROUP:-/aws/bedrock-agentcore/youtube-analyzer}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      # Langfuse LLM Observability
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
     volumes:
       - ./notes:/app/notes
     command: python agent.py "${VIDEO_URL:-https://www.youtube.com/watch?v=dQw4w9WgXcQ}"
@@ -73,19 +73,12 @@ services:
       - NOTES_BACKEND=local
       - NOTES_LOCAL_DIR=/tmp/notes
       - CLAUDE_MODEL=claude-sonnet-4-20250514
-      # AWS AgentCore Observability
-      - AGENT_OBSERVABILITY_ENABLED=${AGENT_OBSERVABILITY_ENABLED:-true}
-      - OTEL_SERVICE_NAME=youtube-analyzer-agent
-      - CLOUDWATCH_LOG_GROUP=${CLOUDWATCH_LOG_GROUP:-/aws/bedrock-agentcore/youtube-analyzer}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - AWS_REGION=${AWS_REGION:-us-east-1}
-      # OpenTelemetry settings for AWS
-      - OTEL_PYTHON_DISTRO=aws_distro
-      - OTEL_PYTHON_CONFIGURATOR=aws_configurator
-      - OTEL_TRACES_EXPORTER=otlp
-      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-      - OTEL_RESOURCE_ATTRIBUTES=service.name=youtube-analyzer-agent
-      - OTEL_EXPORTER_OTLP_LOGS_HEADERS=x-aws-log-group=/aws/bedrock-agentcore/youtube-analyzer,x-aws-log-stream=runtime-logs,x-aws-metric-namespace=bedrock-agentcore
+      # Langfuse LLM Observability
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
     volumes:
       - ./notes:/tmp/notes
 
@@ -103,14 +96,14 @@ services:
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
       - NOTES_BACKEND=local
       - NOTES_LOCAL_DIR=/app/notes
-      # AWS AgentCore Observability
-      - AGENT_OBSERVABILITY_ENABLED=${AGENT_OBSERVABILITY_ENABLED:-false}
-      - OTEL_SERVICE_NAME=youtube-analyzer-agent
-      - CLOUDWATCH_LOG_GROUP=${CLOUDWATCH_LOG_GROUP:-/aws/bedrock-agentcore/youtube-analyzer}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      # Langfuse LLM Observability
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
     volumes:
       - ./notes:/app/notes
     command: python server.py
@@ -134,10 +127,11 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
-      # Observability / OTEL
-      - AGENT_OBSERVABILITY_ENABLED=${AGENT_OBSERVABILITY_ENABLED:-false}
-      - OTEL_SERVICE_NAME=youtube-analyzer-chatbot
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Langfuse LLM Observability
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
     command: python chatbot_server.py
 
   # Local transcript fetcher (runs on cron)
