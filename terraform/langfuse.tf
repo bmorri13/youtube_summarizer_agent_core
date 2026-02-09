@@ -182,7 +182,7 @@ resource "aws_instance" "langfuse" {
       redis_password     = random_password.langfuse_redis[0].result
       clickhouse_password = random_password.langfuse_clickhouse[0].result
       minio_password     = random_password.langfuse_minio[0].result
-      nextauth_url       = "https://${var.langfuse_host_header}"
+      nextauth_url       = "http://${var.langfuse_host_header}"
       init_org_id        = "${var.project_name}-org"
       init_project_id    = var.project_name
       init_public_key    = local.langfuse_public_key
@@ -197,7 +197,7 @@ resource "aws_instance" "langfuse" {
   }
 
   lifecycle {
-    ignore_changes = [ami, user_data]
+    ignore_changes = [ami]
   }
 }
 
