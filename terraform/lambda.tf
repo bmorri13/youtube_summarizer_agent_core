@@ -19,12 +19,12 @@ resource "aws_lambda_function" "main" {
         # Note: AWS_REGION is automatically provided by Lambda
       },
       var.enable_observability ? {
-        # AWS ADOT configuration for infra-level tracing (X-Ray)
+        # AWS ADOT configuration for X-Ray tracing
+        # Let aws_configurator auto-select the X-Ray UDP exporter for Lambda
+        # (do NOT set OTEL_TRACES_EXPORTER=otlp — no OTLP collector in container Lambda)
         OTEL_SERVICE_NAME                      = var.project_name
         OTEL_PYTHON_DISTRO                     = "aws_distro"
         OTEL_PYTHON_CONFIGURATOR               = "aws_configurator"
-        OTEL_EXPORTER_OTLP_PROTOCOL            = "http/protobuf"
-        OTEL_TRACES_EXPORTER                   = "otlp"
         OTEL_METRICS_EXPORTER                  = "none"
         OTEL_LOGS_EXPORTER                     = "none"
         OTEL_RESOURCE_ATTRIBUTES               = "service.name=${var.project_name}"
