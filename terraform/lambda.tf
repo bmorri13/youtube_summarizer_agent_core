@@ -20,15 +20,16 @@ resource "aws_lambda_function" "main" {
       },
       var.enable_observability ? {
         # AWS ADOT configuration for infra-level tracing (X-Ray)
-        OTEL_SERVICE_NAME           = var.project_name
-        OTEL_PYTHON_DISTRO          = "aws_distro"
-        OTEL_PYTHON_CONFIGURATOR    = "aws_configurator"
-        OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
-        OTEL_TRACES_EXPORTER        = "otlp"
-        OTEL_METRICS_EXPORTER       = "none"
-        OTEL_LOGS_EXPORTER          = "none"
-        OTEL_RESOURCE_ATTRIBUTES    = "service.name=${var.project_name}"
-        LOG_LEVEL                   = "INFO"
+        OTEL_SERVICE_NAME                    = var.project_name
+        OTEL_PYTHON_DISTRO                   = "aws_distro"
+        OTEL_PYTHON_CONFIGURATOR             = "aws_configurator"
+        OTEL_EXPORTER_OTLP_PROTOCOL          = "http/protobuf"
+        OTEL_TRACES_EXPORTER                 = "otlp"
+        OTEL_METRICS_EXPORTER                = "none"
+        OTEL_LOGS_EXPORTER                   = "none"
+        OTEL_RESOURCE_ATTRIBUTES             = "service.name=${var.project_name}"
+        OTEL_PYTHON_DISABLED_INSTRUMENTATIONS = "aws-lambda"
+        LOG_LEVEL                            = "INFO"
       } : {},
       var.enable_knowledge_base ? {
         # RAG Chatbot configuration
