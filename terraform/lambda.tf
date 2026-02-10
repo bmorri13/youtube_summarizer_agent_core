@@ -10,8 +10,7 @@ resource "aws_lambda_function" "main" {
   environment {
     variables = merge(
       {
-        # Application config
-        ANTHROPIC_API_KEY    = var.anthropic_api_key
+        # Application config (uses Bedrock via IAM, no API key needed)
         NOTES_BACKEND        = "s3"
         NOTES_S3_BUCKET      = aws_s3_bucket.notes.id
         CLAUDE_MODEL         = var.claude_model

@@ -17,9 +17,10 @@ variable "project_name" {
 }
 
 variable "anthropic_api_key" {
-  description = "Anthropic API key for Claude"
+  description = "Deprecated: no longer used (Bedrock via IAM). Kept for CI/CD backwards compatibility."
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "slack_webhook_url" {
@@ -42,9 +43,9 @@ variable "lambda_timeout" {
 }
 
 variable "claude_model" {
-  description = "Claude model ID to use"
+  description = "Bedrock model ID for the agent (cross-region inference profile)"
   type        = string
-  default     = "claude-sonnet-4-20250514"
+  default     = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 }
 
 variable "monitor_channel_urls" {
