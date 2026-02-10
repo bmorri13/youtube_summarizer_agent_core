@@ -20,19 +20,24 @@ resource "aws_lambda_function" "main" {
       },
       var.enable_observability ? {
         # AWS ADOT configuration for infra-level tracing (X-Ray)
-        OTEL_SERVICE_NAME                     = var.project_name
-        OTEL_PYTHON_DISTRO                    = "aws_distro"
-        OTEL_PYTHON_CONFIGURATOR              = "aws_configurator"
-        OTEL_EXPORTER_OTLP_PROTOCOL           = "http/protobuf"
-        OTEL_TRACES_EXPORTER                  = "otlp"
-        OTEL_METRICS_EXPORTER                 = "none"
-        OTEL_LOGS_EXPORTER                    = "none"
-        OTEL_RESOURCE_ATTRIBUTES              = "service.name=${var.project_name}"
-        OTEL_PYTHON_DISABLED_INSTRUMENTATIONS = "aws-lambda"
-        # Truncate span attributes to fit X-Ray UDP 64KB limit
-        # (LangChain instrumentation captures full prompts/completions)
-        OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT = "4096"
-        LOG_LEVEL                             = "INFO"
+        OTEL_SERVICE_NAME                      = var.project_name
+        OTEL_PYTHON_DISTRO                     = "aws_distro"
+        OTEL_PYTHON_CONFIGURATOR               = "aws_configurator"
+        OTEL_EXPORTER_OTLP_PROTOCOL            = "http/protobuf"
+        OTEL_TRACES_EXPORTER                   = "otlp"
+        OTEL_METRICS_EXPORTER                  = "none"
+        OTEL_LOGS_EXPORTER                     = "none"
+        OTEL_RESOURCE_ATTRIBUTES               = "service.name=${var.project_name}"
+        OTEL_PYTHON_DISABLED_INSTRUMENTATIONS  = "aws-lambda"
+        # X-Ray daemon has a 64KB UDP limit; LangChain captures many large
+        # attributes (prompts, completions, tool I/O). Aggressively truncate
+        # and limit batch size to fit within UDP transport.
+        # Full-fidelity traces are in Langfuse — X-Ray is for infra overview.
+        OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT = "256"
+        OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT        = "64"
+        OTEL_BSP_MAX_EXPORT_BATCH_SIZE         = "5"
+        OTEL_SPAN_EVENT_COUNT_LIMIT            = "10"
+        LOG_LEVEL                              = "INFO"
       } : {},
       var.enable_knowledge_base ? {
         # RAG Chatbot configuration
