@@ -107,6 +107,18 @@ def retrieve_from_knowledge_base(query: str, kb_id: str = None, max_results: int
     return results
 
 
+def _extract_text(content):
+    """Extract text from LangChain message content (string or list of content blocks)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in content
+        )
+    return str(content)
+
+
 def _build_context_and_sources(kb_results: list):
     """Build context string and sources list from KB results."""
     context_parts = []
@@ -184,7 +196,7 @@ def chat(messages: list, session_id: str = None, user_id: str = None):
     usage = response.usage_metadata or {}
 
     return {
-        "response": response.content,
+        "response": _extract_text(response.content),
         "sources": sources,
         "usage": {
             "input_tokens": usage.get("input_tokens", 0),
@@ -236,8 +248,9 @@ def chat_stream(messages: list, session_id: str = None, user_id: str = None):
 
     full_response = []
     for chunk in model.stream(lc_messages, config=config):
-        if chunk.content:
-            full_response.append(chunk.content)
-            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk.content})}\n\n"
+        text = _extract_text(chunk.content)
+        if text:
+            full_response.append(text)
+            yield f"data: {json.dumps({'type': 'chunk', 'content': text})}\n\n"
 
     yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
