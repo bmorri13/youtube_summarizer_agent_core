@@ -243,8 +243,8 @@ resource "aws_ecs_task_definition" "chatbot" {
         { name = "OTEL_METRICS_EXPORTER", value = "none" },
         { name = "OTEL_LOGS_EXPORTER", value = "none" },
         { name = "OTEL_RESOURCE_ATTRIBUTES", value = "service.name=${var.project_name}-chatbot" },
-        { name = "OTEL_PYTHON_EXCLUDED_URLS", value = "health,^/$,^/assets" },
-        { name = "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS", value = "health,^/$,^/assets" },
+        { name = "OTEL_PYTHON_EXCLUDED_URLS", value = "health,^/$,^/assets,/api/chat" },
+        { name = "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS", value = "health,^/$,^/assets,/api/chat" },
       ] : []
     )
 
