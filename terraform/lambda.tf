@@ -19,25 +19,22 @@ resource "aws_lambda_function" "main" {
         # Note: AWS_REGION is automatically provided by Lambda
       },
       var.enable_observability ? {
-        # AWS ADOT configuration for X-Ray tracing
-        # Let aws_configurator auto-select the X-Ray UDP exporter for Lambda
-        # (do NOT set OTEL_TRACES_EXPORTER=otlp — no OTLP collector in container Lambda)
-        OTEL_SERVICE_NAME                      = var.project_name
-        OTEL_PYTHON_DISTRO                     = "aws_distro"
-        OTEL_PYTHON_CONFIGURATOR               = "aws_configurator"
-        OTEL_METRICS_EXPORTER                  = "none"
-        OTEL_LOGS_EXPORTER                     = "none"
-        OTEL_RESOURCE_ATTRIBUTES               = "service.name=${var.project_name}"
-        OTEL_PYTHON_DISABLED_INSTRUMENTATIONS  = "aws-lambda"
-        # X-Ray daemon has a 64KB UDP limit; LangChain captures many large
-        # attributes (prompts, completions, tool I/O). Aggressively truncate
-        # and limit batch size to fit within UDP transport.
-        # Full-fidelity traces are in Langfuse — X-Ray is for infra overview.
-        OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT = "256"
-        OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT        = "64"
-        OTEL_BSP_MAX_EXPORT_BATCH_SIZE         = "5"
-        OTEL_SPAN_EVENT_COUNT_LIMIT            = "10"
-        LOG_LEVEL                              = "INFO"
+        # Collector-less ADOT: send OTLP traces directly to X-Ray HTTPS endpoint
+        # (container Lambda has no ADOT Layer/collector, and UDP daemon has 64KB limit)
+        OTEL_SERVICE_NAME                       = var.project_name
+        OTEL_PYTHON_DISTRO                      = "aws_distro"
+        OTEL_PYTHON_CONFIGURATOR                = "aws_configurator"
+        OTEL_TRACES_EXPORTER                    = "otlp"
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT      = "https://xray.${var.aws_region}.amazonaws.com/v1/traces"
+        OTEL_EXPORTER_OTLP_TRACES_PROTOCOL      = "http/protobuf"
+        OTEL_METRICS_EXPORTER                   = "none"
+        OTEL_LOGS_EXPORTER                      = "none"
+        OTEL_RESOURCE_ATTRIBUTES                = "service.name=${var.project_name},aws.log.group.names=/aws/lambda/${var.project_name}"
+        OTEL_PYTHON_DISABLED_INSTRUMENTATIONS   = "aws-lambda"
+        # Truncate span attributes — full-fidelity traces are in Langfuse
+        OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT  = "4096"
+        OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT         = "128"
+        LOG_LEVEL                               = "INFO"
       } : {},
       var.enable_knowledge_base ? {
         # RAG Chatbot configuration

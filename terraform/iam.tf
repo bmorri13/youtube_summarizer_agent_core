@@ -64,7 +64,9 @@ resource "aws_iam_role_policy" "lambda_xray" {
       Effect = "Allow"
       Action = [
         "xray:PutTraceSegments",
-        "xray:PutTelemetryRecords"
+        "xray:PutTelemetryRecords",
+        "xray:GetSamplingRules",
+        "xray:GetSamplingTargets"
       ]
       Resource = "*"
     }]
