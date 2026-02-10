@@ -73,6 +73,25 @@ resource "aws_iam_role_policy" "lambda_xray" {
   })
 }
 
+# AgentCore log group write access (conditional - for GenAI Observability dashboard)
+resource "aws_iam_role_policy" "lambda_agentcore_logs" {
+  count = var.enable_observability ? 1 : 0
+  name  = "${var.project_name}-agentcore-logs"
+  role  = aws_iam_role.lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ]
+      Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/bedrock-agentcore/runtimes/*:*"
+    }]
+  })
+}
+
 # Bedrock agent permissions (always needed - agent uses Bedrock for LLM calls)
 resource "aws_iam_role_policy" "lambda_bedrock_agent" {
   name = "${var.project_name}-bedrock-agent"

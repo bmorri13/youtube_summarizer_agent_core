@@ -19,19 +19,19 @@ resource "aws_lambda_function" "main" {
         # Note: AWS_REGION is automatically provided by Lambda
       },
       var.enable_observability ? {
-        # Collector-less ADOT: send OTLP traces directly to X-Ray HTTPS endpoint
-        # (container Lambda has no ADOT Layer/collector, and UDP daemon has 64KB limit)
+        # ADOT + AgentCore Observability: traces to X-Ray, logs/metrics to AgentCore dashboard
+        AGENT_OBSERVABILITY_ENABLED             = "true"
         OTEL_SERVICE_NAME                       = var.project_name
         OTEL_PYTHON_DISTRO                      = "aws_distro"
         OTEL_PYTHON_CONFIGURATOR                = "aws_configurator"
         OTEL_TRACES_EXPORTER                    = "otlp"
         OTEL_EXPORTER_OTLP_TRACES_ENDPOINT      = "https://xray.${var.aws_region}.amazonaws.com/v1/traces"
-        OTEL_EXPORTER_OTLP_TRACES_PROTOCOL      = "http/protobuf"
+        OTEL_EXPORTER_OTLP_PROTOCOL             = "http/protobuf"
         OTEL_METRICS_EXPORTER                   = "none"
         OTEL_LOGS_EXPORTER                      = "none"
-        OTEL_RESOURCE_ATTRIBUTES                = "service.name=${var.project_name},aws.log.group.names=/aws/lambda/${var.project_name}"
+        OTEL_RESOURCE_ATTRIBUTES                = "service.name=${var.project_name},aws.log.group.names=/aws/bedrock-agentcore/runtimes/${var.project_name}"
+        OTEL_EXPORTER_OTLP_LOGS_HEADERS         = "x-aws-log-group=/aws/bedrock-agentcore/runtimes/${var.project_name},x-aws-log-stream=runtime-logs,x-aws-metric-namespace=bedrock-agentcore"
         OTEL_PYTHON_DISABLED_INSTRUMENTATIONS   = "aws-lambda"
-        # Truncate span attributes — full-fidelity traces are in Langfuse
         OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT  = "4096"
         OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT         = "128"
         LOG_LEVEL                               = "INFO"

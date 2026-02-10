@@ -234,6 +234,7 @@ resource "aws_ecs_task_definition" "chatbot" {
         { name = "LANGFUSE_SECRET_KEY", value = local.langfuse_secret_key },
       ] : [],
       var.enable_observability ? [
+        { name = "AGENT_OBSERVABILITY_ENABLED", value = "true" },
         { name = "OTEL_SERVICE_NAME", value = "${var.project_name}-chatbot" },
         { name = "OTEL_PYTHON_DISTRO", value = "aws_distro" },
         { name = "OTEL_PYTHON_CONFIGURATOR", value = "aws_configurator" },
@@ -242,7 +243,8 @@ resource "aws_ecs_task_definition" "chatbot" {
         { name = "OTEL_TRACES_EXPORTER", value = "otlp" },
         { name = "OTEL_METRICS_EXPORTER", value = "none" },
         { name = "OTEL_LOGS_EXPORTER", value = "none" },
-        { name = "OTEL_RESOURCE_ATTRIBUTES", value = "service.name=${var.project_name}-chatbot" },
+        { name = "OTEL_RESOURCE_ATTRIBUTES", value = "service.name=${var.project_name}-chatbot,aws.log.group.names=/aws/bedrock-agentcore/runtimes/${var.project_name}-chatbot" },
+        { name = "OTEL_EXPORTER_OTLP_LOGS_HEADERS", value = "x-aws-log-group=/aws/bedrock-agentcore/runtimes/${var.project_name}-chatbot,x-aws-log-stream=runtime-logs,x-aws-metric-namespace=bedrock-agentcore" },
         { name = "OTEL_PYTHON_EXCLUDED_URLS", value = "health,^/$,^/assets,/api/chat" },
         { name = "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS", value = "health,^/$,^/assets,/api/chat" },
       ] : []
@@ -377,6 +379,24 @@ resource "aws_iam_role_policy" "ecs_task_xray" {
       Effect   = "Allow"
       Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
       Resource = "*"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "ecs_task_agentcore_logs" {
+  count = var.enable_knowledge_base && var.enable_observability ? 1 : 0
+  name  = "${var.project_name}-ecs-task-agentcore-logs"
+  role  = aws_iam_role.ecs_task[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ]
+      Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/bedrock-agentcore/runtimes/*:*"
     }]
   })
 }

@@ -4,6 +4,19 @@ resource "aws_cloudwatch_log_group" "lambda" {
   retention_in_days = var.log_retention_days
 }
 
+# AgentCore Observability log groups (routes OTEL traces to GenAI Observability dashboard)
+resource "aws_cloudwatch_log_group" "agentcore" {
+  count             = var.enable_observability ? 1 : 0
+  name              = "/aws/bedrock-agentcore/runtimes/${var.project_name}"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_cloudwatch_log_group" "agentcore_chatbot" {
+  count             = var.enable_knowledge_base && var.enable_observability ? 1 : 0
+  name              = "/aws/bedrock-agentcore/runtimes/${var.project_name}-chatbot"
+  retention_in_days = var.log_retention_days
+}
+
 # SNS Topic for alarms (optional)
 resource "aws_sns_topic" "alarms" {
   count = var.enable_alarms ? 1 : 0
