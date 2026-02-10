@@ -78,7 +78,7 @@ output "chatbot_service_name" {
 
 # Langfuse outputs
 output "langfuse_url" {
-  description = "Langfuse URL (via ALB host-based routing)"
+  description = "Langfuse URL (via dedicated ALB)"
   value       = var.enable_langfuse ? "https://${var.langfuse_host_header}" : null
 }
 
