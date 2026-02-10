@@ -61,9 +61,9 @@ def _create_chatbot_model():
     }
     if GUARDRAIL_ID and GUARDRAIL_VERSION:
         kwargs["guardrail_config"] = {
-            "guardrailId": GUARDRAIL_ID,
+            "guardrailIdentifier": GUARDRAIL_ID,
             "guardrailVersion": GUARDRAIL_VERSION,
-            "trace": True,
+            "trace": "enabled",
         }
         kwargs["guard_last_turn_only"] = True  # Multi-turn optimization
     return ChatBedrockConverse(**kwargs)

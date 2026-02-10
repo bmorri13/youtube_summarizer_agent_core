@@ -86,9 +86,9 @@ def _create_model():
     }
     if GUARDRAIL_ID and GUARDRAIL_VERSION:
         kwargs["guardrail_config"] = {
-            "guardrailId": GUARDRAIL_ID,
+            "guardrailIdentifier": GUARDRAIL_ID,
             "guardrailVersion": GUARDRAIL_VERSION,
-            "trace": True,
+            "trace": "enabled",
         }
     return ChatBedrockConverse(**kwargs)
 
