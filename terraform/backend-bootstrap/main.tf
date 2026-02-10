@@ -478,6 +478,37 @@ resource "aws_iam_role_policy" "github_actions" {
           "bedrock:CreateGuardrailVersion"
         ]
         Resource = "*"
+      },
+      # Bedrock Model Invocation Logging permissions
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:PutModelInvocationLoggingConfiguration",
+          "bedrock:GetModelInvocationLoggingConfiguration",
+          "bedrock:DeleteModelInvocationLoggingConfiguration"
+        ]
+        Resource = "*"
+      },
+      # CloudWatch Logs resource policy permissions (for X-Ray Transaction Search)
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:PutResourcePolicy",
+          "logs:DescribeResourcePolicies",
+          "logs:DeleteResourcePolicy"
+        ]
+        Resource = "*"
+      },
+      # X-Ray permissions (for Transaction Search configuration)
+      {
+        Effect = "Allow"
+        Action = [
+          "xray:UpdateTraceSegmentDestination",
+          "xray:GetTraceSegmentDestination",
+          "xray:UpdateIndexingRule",
+          "xray:GetIndexingRules"
+        ]
+        Resource = "*"
       }
     ]
   })
