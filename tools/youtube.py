@@ -1,5 +1,6 @@
 """YouTube transcript and metadata fetching tool."""
 
+import json
 import re
 import requests
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -8,23 +9,7 @@ from youtube_transcript_api._errors import (
     NoTranscriptFound,
     VideoUnavailable,
 )
-
-
-# Tool definition for Claude API
-TOOL_DEFINITION = {
-    "name": "get_transcript",
-    "description": "Fetch the transcript and metadata of a YouTube video. Returns the full text transcript along with video title, channel name, and URL.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "video_url": {
-                "type": "string",
-                "description": "YouTube video URL or video ID"
-            }
-        },
-        "required": ["video_url"]
-    }
-}
+from langchain_core.tools import tool
 
 
 def extract_video_id(url: str) -> str | None:
@@ -60,19 +45,20 @@ def get_video_metadata(video_id: str) -> dict:
         }
 
 
-def get_transcript(video_url: str) -> dict:
-    """Fetch YouTube video transcript and metadata.
+@tool
+def get_transcript(video_url: str) -> str:
+    """Fetch the transcript and metadata of a YouTube video. Returns the full text transcript along with video title, channel name, and URL.
 
-    Returns:
-        dict with 'success', 'content', 'title', 'channel_name', 'video_url' or 'error' keys
+    Args:
+        video_url: YouTube video URL or video ID
     """
     video_id = extract_video_id(video_url)
 
     if not video_id:
-        return {
+        return json.dumps({
             "success": False,
             "error": f"Could not extract video ID from: {video_url}"
-        }
+        })
 
     # Get video metadata
     metadata = get_video_metadata(video_id)
@@ -85,36 +71,36 @@ def get_transcript(video_url: str) -> dict:
         # Combine all transcript snippets into full text
         full_transcript = " ".join(snippet.text for snippet in transcript)
 
-        return {
+        return json.dumps({
             "success": True,
             "video_id": video_id,
             "title": metadata["title"],
             "channel_name": metadata["channel_name"],
             "video_url": metadata["video_url"],
             "content": full_transcript
-        }
+        })
 
     except TranscriptsDisabled:
-        return {
+        return json.dumps({
             "success": False,
             "error": f"Transcripts are disabled for video {video_id}",
             **metadata
-        }
+        })
     except NoTranscriptFound:
-        return {
+        return json.dumps({
             "success": False,
             "error": f"No transcript found for video {video_id}",
             **metadata
-        }
+        })
     except VideoUnavailable:
-        return {
+        return json.dumps({
             "success": False,
             "error": f"Video {video_id} is unavailable",
             **metadata
-        }
+        })
     except Exception as e:
-        return {
+        return json.dumps({
             "success": False,
             "error": f"Error fetching transcript: {str(e)}",
             **metadata
-        }
+        })

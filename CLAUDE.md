@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-YouTube Analyzer Agent - an AI agent that analyzes YouTube videos by fetching transcripts, generating summaries, saving notes, and sending Slack notifications. Uses the Anthropic Python SDK with a manual tool-calling loop (not the Node.js-based claude-agent-sdk).
+YouTube Analyzer Agent - an AI agent that analyzes YouTube videos by fetching transcripts, generating summaries, saving notes, and sending Slack notifications. Uses LangGraph + ChatBedrockConverse (AWS Bedrock) with LangChain @tool decorators and Langfuse CallbackHandler for observability.
 
 ## Development Commands
 
@@ -42,21 +42,19 @@ There is no automated test suite. Manual testing is done by running the agent ag
 ## Architecture
 
 ### Agent Loop Pattern
-The agent in `agent.py` implements a standard Anthropic tool-calling loop:
+The agent in `agent.py` uses LangGraph's `create_react_agent` with `ChatBedrockConverse`:
 
 1. `SYSTEM_PROMPT` defines the agent's behavior and workflow
-2. `ALL_TOOLS` (from `tools/__init__.py`) provides tool schemas to Claude
-3. `run_agent()` loops until `stop_reason == "end_turn"` or max turns reached
-4. `handle_tool_call()` dispatches tool executions and logs results
+2. `ALL_TOOLS` (from `tools/__init__.py`) provides LangChain `@tool`-decorated functions
+3. `create_react_agent(model, tools)` handles the tool-calling loop automatically
+4. `LangfuseCallbackHandler` auto-captures all LLM calls, tool I/O, and token usage
 
 ### Tools
-Current tools in `tools/`:
+Current tools in `tools/` — each uses LangChain `@tool` decorator and returns JSON strings:
 - `youtube.py` - `get_transcript`: Fetch video transcript and metadata via `youtube-transcript-api`
 - `channel.py` - `get_latest_channel_video`: Get latest video from a channel via RSS feed (filters out Shorts < 90s)
 - `notes.py` - `save_note`: Save analysis to local/S3, track processed videos
 - `slack.py` - `send_slack_notification`: Send Block Kit formatted notifications
-
-Each tool module exports `TOOL_DEFINITION` (JSON schema) and a main function.
 
 ### Hybrid Fetcher Architecture
 YouTube blocks transcript requests from cloud IPs. The solution:
@@ -89,8 +87,8 @@ The Lambda handler accepts multiple formats:
 Two complementary observability layers:
 
 **Langfuse** (LLM-level observability):
-- `@observe()` decorators on `run_agent()`, `_llm_call()`, `handle_tool_call()` in `agent.py`
-- `@observe()` decorators on `chat()`, `retrieve_from_knowledge_base()`, `_converse()` in `chatbot.py`
+- `LangfuseCallbackHandler` passed to LangGraph and ChatBedrockConverse — auto-captures all LLM calls, tool I/O, and token usage
+- No manual `@observe()` decorators needed
 - Tracks prompts, completions, token usage, cost, tool calls in a conversation-level UI
 - Configured via `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` env vars
 - Self-hosted Langfuse v3 on EC2 (t3.medium) running Docker Compose with 6 services: web, worker, PostgreSQL, Redis, ClickHouse, MinIO (conditional on `var.enable_langfuse`)
@@ -106,14 +104,15 @@ Two complementary observability layers:
 **`observability.py`** provides shared utilities:
 - `sanitize_log_value()` / `sanitize_log_dict()` — log injection prevention
 - `get_logger()` — structured logging (stdout captured by ECS awslogs / Lambda)
-- `flush_traces()` — ADOT trace flush for Lambda cold shutdown
+- `flush_traces()` — ADOT + Langfuse trace flush for Lambda cold shutdown
 
 ### Adding New Tools
 1. Create `tools/my_tool.py` with:
-   - `TOOL_DEFINITION` dict (JSON schema for Claude API)
-   - Main function implementation
-2. Export in `tools/__init__.py`: add to `ALL_TOOLS` list
-3. Add dispatch case in `handle_tool_call()` in `agent.py`
+   - A function decorated with `@tool` from `langchain_core.tools`
+   - Function must return a JSON string (`json.dumps(result)`)
+   - Docstring becomes the tool description for the LLM
+2. Export in `tools/__init__.py`: add the tool function to `ALL_TOOLS` list
+3. No dispatch code needed — LangGraph auto-dispatches to `@tool` functions
 
 ### Bedrock Knowledge Base (Semantic Search)
 When `enable_knowledge_base = true`, notes are indexed for semantic search:
@@ -134,8 +133,8 @@ aws bedrock-agent-runtime retrieve \
 ### RAG Chatbot
 A standalone chatbot that queries the Bedrock Knowledge Base of video summaries. Runs as a separate server — no dependency on `agent.py` or `ANTHROPIC_API_KEY`.
 
-**Architecture**: Retrieve + Converse pattern (two separate boto3 calls):
-1. `chatbot.py` — Core logic: `retrieve_from_knowledge_base()` calls `bedrock-agent-runtime.retrieve()`, then `chat()`/`chat_stream()` calls `bedrock-runtime.converse()`/`converse_stream()`
+**Architecture**: Retrieve (boto3) + ChatBedrockConverse (LangChain) pattern:
+1. `chatbot.py` — Core logic: `retrieve_from_knowledge_base()` calls `bedrock-agent-runtime.retrieve()` (direct boto3), then `chat()`/`chat_stream()` uses `ChatBedrockConverse` with `guardrail_config` and `LangfuseCallbackHandler`
 2. `chatbot_server.py` — Standalone FastAPI server (port 8081) with `/api/chat` and `/api/chat/stream` SSE endpoints
 3. `frontend/` — React (Vite) chat UI with SSE streaming and source citations
 
@@ -153,6 +152,7 @@ A standalone chatbot that queries the Bedrock Knowledge Base of video summaries.
 **Deployment**: ECS Fargate behind ALB (HTTP only; Cloudflare CNAME + proxy handles HTTPS). Public subnets with `assign_public_ip = true` (no NAT Gateway). CI/CD updates task definition with new image SHA via `aws ecs register-task-definition` + `update-service`.
 
 ### Key Implementation Notes
+- **LLM via Bedrock**: Agent uses `ChatBedrockConverse` (LangChain) with Bedrock model IDs; no direct Anthropic API key needed
 - **YouTube Transcript API v1.2.3+**: Uses instance-based API: `YouTubeTranscriptApi().fetch(video_id)`
 - **Video metadata**: Fetched via YouTube oembed API (no API key needed)
 - **Slack**: Uses Block Kit formatting, not markdown
@@ -193,15 +193,12 @@ Key variables:
 
 ## Environment Variables
 
-Required:
-- `ANTHROPIC_API_KEY`
-
 Optional:
 - `SLACK_WEBHOOK_URL` - Slack webhook for notifications
 - `NOTES_BACKEND` - `local` (default) or `s3`
 - `NOTES_LOCAL_DIR` - Directory for local notes (default: `./notes`)
 - `NOTES_S3_BUCKET` - S3 bucket for cloud storage
-- `CLAUDE_MODEL` - Model ID (default: `claude-sonnet-4-20250514`)
+- `CLAUDE_MODEL` - Bedrock model ID (default: `us.anthropic.claude-sonnet-4-5-20250929-v1:0`)
 - `MONITOR_CHANNEL_URLS` - Comma-separated channel URLs for scheduled monitoring
 - `LANGFUSE_HOST` - Langfuse server URL for LLM observability
 - `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` - Langfuse API keys

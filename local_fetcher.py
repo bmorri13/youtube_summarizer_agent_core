@@ -14,7 +14,7 @@ import time
 import boto3
 from youtube_transcript_api import YouTubeTranscriptApi
 
-from tools.channel import get_latest_channel_video
+from tools.channel import _get_latest_channel_video_impl as get_latest_channel_video
 
 
 def is_video_processed_s3(video_id: str, max_retries: int = 2) -> bool:

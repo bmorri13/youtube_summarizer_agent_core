@@ -17,6 +17,13 @@ from pydantic import BaseModel
 
 load_dotenv()
 
+# Auto-instrument LangChain for OTEL/X-Ray traces
+try:
+    from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+    LangchainInstrumentor().instrument()
+except ImportError:
+    pass
+
 from chatbot import chat, chat_stream
 
 

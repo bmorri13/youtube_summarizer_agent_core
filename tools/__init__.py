@@ -1,18 +1,17 @@
-"""YouTube Analyzer tools."""
+"""YouTube Analyzer tools — LangChain @tool format."""
 
-from .youtube import get_transcript, TOOL_DEFINITION as YOUTUBE_TOOL
+from .youtube import get_transcript
+from .channel import get_latest_channel_video
 from .notes import (
     save_note,
     is_video_processed,
     mark_video_processed,
     update_channel_checked,
-    TOOL_DEFINITION as NOTES_TOOL,
 )
-from .slack import send_slack_notification, TOOL_DEFINITION as SLACK_TOOL
-from .channel import get_latest_channel_video, TOOL_DEFINITION as CHANNEL_TOOL
+from .slack import send_slack_notification
 
-# All tool definitions for Claude API
-ALL_TOOLS = [YOUTUBE_TOOL, NOTES_TOOL, SLACK_TOOL, CHANNEL_TOOL]
+# All LangChain tool objects for the agent
+ALL_TOOLS = [get_transcript, get_latest_channel_video, save_note, send_slack_notification]
 
 __all__ = [
     "get_transcript",
@@ -23,8 +22,4 @@ __all__ = [
     "mark_video_processed",
     "update_channel_checked",
     "ALL_TOOLS",
-    "YOUTUBE_TOOL",
-    "NOTES_TOOL",
-    "SLACK_TOOL",
-    "CHANNEL_TOOL",
 ]

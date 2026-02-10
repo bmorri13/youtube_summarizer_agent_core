@@ -66,7 +66,7 @@ async def health():
     return {
         "status": "healthy",
         "service": "youtube-analyzer",
-        "anthropic_key_configured": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "bedrock_model": os.environ.get("CLAUDE_MODEL", "us.anthropic.claude-sonnet-4-5-20250929-v1:0"),
         "slack_configured": bool(
             os.environ.get("SLACK_WEBHOOK_URL") or os.environ.get("SLACK_BOT_TOKEN")
         ),

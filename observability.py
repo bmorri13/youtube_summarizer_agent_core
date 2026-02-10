@@ -5,7 +5,7 @@ Provides:
 - Log injection prevention via input sanitization
 - ADOT trace flush for Lambda (ensures spans are exported before cold shutdown)
 
-LLM-level observability (prompts, completions, cost, evals) is handled by Langfuse.
+LLM-level observability is handled by Langfuse (via LangfuseCallbackHandler in LangChain).
 Infrastructure tracing (HTTP latency, cold starts, Bedrock API errors) remains with ADOT/X-Ray.
 """
 
@@ -75,16 +75,6 @@ def sanitize_log_dict(data: dict, max_length: int = 1000) -> dict:
         else:
             sanitized[key] = value
     return sanitized
-
-
-def truncate_for_trace(value, max_length: int = 5000) -> str:
-    """Truncate a value for Langfuse trace storage."""
-    if value is None:
-        return ""
-    str_value = str(value)
-    if len(str_value) > max_length:
-        return str_value[:max_length] + f"...[truncated, {len(str_value)} total chars]"
-    return str_value
 
 
 def setup_logging() -> logging.Logger:

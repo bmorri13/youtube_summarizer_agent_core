@@ -5,15 +5,19 @@ import json
 from dotenv import load_dotenv
 load_dotenv()
 
-from langfuse import observe, get_client
-from observability import get_logger, flush_traces
+# Auto-instrument LangChain for OTEL/X-Ray traces
+try:
+    from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+    LangchainInstrumentor().instrument()
+except ImportError:
+    pass
 
+from observability import get_logger, flush_traces
 from agent import run_agent, run_agent_with_transcript
 
 logger = get_logger()
 
 
-@observe(name="lambda_handler")
 def handler(event, context):
     """AWS Lambda handler function.
 
@@ -44,19 +48,9 @@ def handler(event, context):
     """
     request_id = getattr(context, 'aws_request_id', None) if context else None
 
-    is_prefetched = isinstance(event, dict) and event.get("process_transcript")
-    has_batch = isinstance(event, dict) and event.get("channel_urls")
-    invocation_type = "prefetched" if is_prefetched else "batch" if has_batch else "single"
-
-    get_client().update_current_trace(
-        session_id=request_id,
-        user_id="lambda",
-        metadata={"aws_request_id": request_id, "invocation_type": invocation_type},
-        tags=["lambda", invocation_type],
-    )
-
     try:
         # Handle pre-fetched transcript from local fetcher
+        is_prefetched = isinstance(event, dict) and event.get("process_transcript")
         if is_prefetched:
             return _process_prefetched_transcript(event, request_id=request_id)
 
@@ -115,7 +109,6 @@ def handler(event, context):
         }
     except Exception as e:
         logger.error(f"Lambda handler error: {e}")
-        get_client().update_current_span(level="ERROR", status_message=str(e))
         raise
     finally:
         flush_traces()

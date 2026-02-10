@@ -1,6 +1,6 @@
 """RAG Chatbot - Query YouTube video summaries via Bedrock Knowledge Base.
 
-Uses Retrieve + Converse pattern (two separate boto3 calls) for full control
+Uses Retrieve (direct boto3) + ChatBedrockConverse for full control
 over system prompt, guardrails, streaming, and observability.
 """
 
@@ -9,13 +9,11 @@ import os
 import uuid
 
 import boto3
-from langfuse import observe, get_client
+from langchain_aws import ChatBedrockConverse
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langfuse.langchain import LangfuseCallbackHandler
 
-from observability import (
-    sanitize_log_value,
-    get_logger,
-    truncate_for_trace,
-)
+from observability import sanitize_log_value, get_logger
 
 # Configuration
 KNOWLEDGE_BASE_ID = os.environ.get("KNOWLEDGE_BASE_ID", "")
@@ -53,7 +51,24 @@ def _get_runtime_client():
     return _bedrock_runtime_client
 
 
-@observe(as_type="retriever", name="kb_retrieve")
+def _create_chatbot_model():
+    """Create ChatBedrockConverse with optional guardrails."""
+    kwargs = {
+        "client": _get_runtime_client(),
+        "model_id": CHATBOT_MODEL_ID,
+        "max_tokens": 2048,
+        "temperature": 0.3,
+    }
+    if GUARDRAIL_ID and GUARDRAIL_VERSION:
+        kwargs["guardrail_config"] = {
+            "guardrailId": GUARDRAIL_ID,
+            "guardrailVersion": GUARDRAIL_VERSION,
+            "trace": True,
+        }
+        kwargs["guard_last_turn_only"] = True  # Multi-turn optimization
+    return ChatBedrockConverse(**kwargs)
+
+
 def retrieve_from_knowledge_base(query: str, kb_id: str = None, max_results: int = None):
     """Retrieve relevant documents from Bedrock Knowledge Base."""
     logger = get_logger()
@@ -89,48 +104,40 @@ def retrieve_from_knowledge_base(query: str, kb_id: str = None, max_results: int
         })
 
     logger.info(f"KB retrieve: {len(results)} results for query: {sanitize_log_value(query, 100)}")
-
-    get_client().update_current_span(
-        metadata={"kb_id": kb_id, "max_results": max_results, "result_count": len(results)},
-    )
-
     return results
 
 
-def _build_converse_params(system_prompt: str, messages: list, stream: bool = False):
-    """Build parameters for Converse/ConverseStream API call."""
-    params = {
-        "modelId": CHATBOT_MODEL_ID,
-        "system": [{"text": system_prompt}],
-        "messages": messages,
-        "inferenceConfig": {
-            "maxTokens": 2048,
-            "temperature": 0.3,
-        },
-    }
+def _build_context_and_sources(kb_results: list):
+    """Build context string and sources list from KB results."""
+    context_parts = []
+    sources = []
+    for i, result in enumerate(kb_results):
+        context_parts.append(f"[Source {i + 1}] (score: {result['score']:.2f})\n{result['text']}")
+        if result["source_uri"]:
+            sources.append({
+                "source_uri": result["source_uri"],
+                "score": result["score"],
+            })
 
-    if GUARDRAIL_ID and GUARDRAIL_VERSION:
-        params["guardrailConfig"] = {
-            "guardrailIdentifier": GUARDRAIL_ID,
-            "guardrailVersion": GUARDRAIL_VERSION,
-        }
-        if stream:
-            params["guardrailConfig"]["streamProcessingMode"] = "async"
-
-    return params
+    context = "\n\n---\n\n".join(context_parts) if context_parts else "No relevant context found."
+    return context, sources
 
 
-@observe()
+def _convert_to_langchain_messages(system_prompt: str, messages: list):
+    """Convert chat messages to LangChain message format."""
+    lc_messages = [SystemMessage(content=system_prompt)]
+    for msg in messages:
+        if msg["role"] == "user":
+            lc_messages.append(HumanMessage(content=msg["content"]))
+        else:
+            lc_messages.append(AIMessage(content=msg["content"]))
+    return lc_messages
+
+
 def chat(messages: list, session_id: str = None, user_id: str = None):
     """Non-streaming chat with RAG retrieval."""
     logger = get_logger()
     session_id = session_id or str(uuid.uuid4())
-
-    get_client().update_current_trace(
-        session_id=session_id,
-        user_id=user_id,
-        tags=["chatbot"],
-    )
 
     # Extract latest user message for retrieval
     user_query = ""
@@ -149,106 +156,42 @@ def chat(messages: list, session_id: str = None, user_id: str = None):
 
     # Retrieve from KB
     kb_results = retrieve_from_knowledge_base(user_query)
-
-    # Build context from retrieved results
-    context_parts = []
-    sources = []
-    for i, result in enumerate(kb_results):
-        context_parts.append(f"[Source {i + 1}] (score: {result['score']:.2f})\n{result['text']}")
-        if result["source_uri"]:
-            sources.append({
-                "source_uri": result["source_uri"],
-                "score": result["score"],
-            })
-
-    context = "\n\n---\n\n".join(context_parts) if context_parts else "No relevant context found."
+    context, sources = _build_context_and_sources(kb_results)
     system_prompt = SYSTEM_PROMPT.format(context=context)
 
-    # Convert messages to Bedrock Converse format
-    converse_messages = []
-    for msg in messages:
-        converse_messages.append({
-            "role": msg["role"],
-            "content": [{"text": msg["content"]}],
-        })
+    # Build LangChain messages
+    lc_messages = _convert_to_langchain_messages(system_prompt, messages)
 
-    # Update trace with input
-    get_client().update_current_trace(
-        input={"query": user_query, "message_count": len(messages)},
+    # Create model and handler
+    model = _create_chatbot_model()
+    handler = LangfuseCallbackHandler(
+        session_id=session_id, user_id=user_id, tags=["chatbot"]
     )
 
-    # Call Converse API
-    try:
-        response = _converse(system_prompt, converse_messages)
-    except Exception as e:
-        get_client().update_current_trace(metadata={"error": str(e)})
-        raise
-
-    # Extract response
-    output = response.get("output", {})
-    message = output.get("message", {})
-    response_text = ""
-    for block in message.get("content", []):
-        if "text" in block:
-            response_text += block["text"]
+    response = model.invoke(lc_messages, config={"callbacks": [handler]})
 
     # Check for guardrail intervention
-    stop_reason = response.get("stopReason", "")
+    stop_reason = response.response_metadata.get("stopReason", "")
     if stop_reason == "guardrail_intervened":
         logger.warning(f"Guardrail intervened for session {session_id}")
-        get_client().update_current_trace(metadata={"guardrail_intervened": True})
 
-    # Extract usage for response
-    usage_data = response.get("usage", {})
-    usage = {
-        "input_tokens": usage_data.get("inputTokens", 0),
-        "output_tokens": usage_data.get("outputTokens", 0),
-    }
-
-    get_client().update_current_trace(
-        output=truncate_for_trace(response_text, 5000),
-        metadata={"source_count": len(sources), **usage},
-    )
+    usage = response.usage_metadata or {}
 
     return {
-        "response": response_text,
+        "response": response.content,
         "sources": sources,
-        "usage": usage,
+        "usage": {
+            "input_tokens": usage.get("input_tokens", 0),
+            "output_tokens": usage.get("output_tokens", 0),
+        },
         "session_id": session_id,
     }
 
 
-@observe(as_type="generation", name="bedrock_converse")
-def _converse(system_prompt: str, converse_messages: list):
-    """Call Bedrock Converse API, tracked as a Langfuse generation."""
-    client = _get_runtime_client()
-    params = _build_converse_params(system_prompt, converse_messages)
-    response = client.converse(**params)
-
-    usage_data = response.get("usage", {})
-    get_client().update_current_generation(
-        model=CHATBOT_MODEL_ID,
-        usage_details={
-            "input_tokens": usage_data.get("inputTokens", 0),
-            "output_tokens": usage_data.get("outputTokens", 0),
-        },
-        metadata={"stop_reason": response.get("stopReason", "")},
-    )
-
-    return response
-
-
-@observe(name="chat_stream")
 def chat_stream(messages: list, session_id: str = None, user_id: str = None):
     """Streaming chat with RAG retrieval. Yields SSE-formatted JSON strings."""
     logger = get_logger()
     session_id = session_id or str(uuid.uuid4())
-
-    get_client().update_current_trace(
-        session_id=session_id,
-        user_id=user_id,
-        tags=["chatbot", "streaming"],
-    )
 
     # Extract latest user message for retrieval
     user_query = ""
@@ -262,78 +205,27 @@ def chat_stream(messages: list, session_id: str = None, user_id: str = None):
         yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
         return
 
-    get_client().update_current_trace(
-        input={"query": user_query, "message_count": len(messages)},
-    )
-
     # Retrieve from KB
     kb_results = retrieve_from_knowledge_base(user_query)
-
-    # Build context and sources
-    context_parts = []
-    sources = []
-    for i, result in enumerate(kb_results):
-        context_parts.append(f"[Source {i + 1}] (score: {result['score']:.2f})\n{result['text']}")
-        if result["source_uri"]:
-            sources.append({
-                "source_uri": result["source_uri"],
-                "score": result["score"],
-            })
-
-    context = "\n\n---\n\n".join(context_parts) if context_parts else "No relevant context found."
+    context, sources = _build_context_and_sources(kb_results)
     system_prompt = SYSTEM_PROMPT.format(context=context)
 
     # Send sources early
     yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
 
-    # Convert messages to Bedrock Converse format
-    converse_messages = []
-    for msg in messages:
-        converse_messages.append({
-            "role": msg["role"],
-            "content": [{"text": msg["content"]}],
-        })
+    # Build LangChain messages
+    lc_messages = _convert_to_langchain_messages(system_prompt, messages)
 
-    # Call ConverseStream API
-    client = _get_runtime_client()
-    params = _build_converse_params(system_prompt, converse_messages, stream=True)
-    try:
-        response = client.converse_stream(**params)
-    except Exception as e:
-        get_client().update_current_trace(metadata={"error": str(e)})
-        raise
-
-    total_input_tokens = 0
-    total_output_tokens = 0
-    guardrail_intervened = False
-    full_response = []
-
-    for event in response.get("stream", []):
-        if "contentBlockDelta" in event:
-            delta = event["contentBlockDelta"].get("delta", {})
-            if "text" in delta:
-                full_response.append(delta["text"])
-                yield f"data: {json.dumps({'type': 'chunk', 'content': delta['text']})}\n\n"
-
-        elif "metadata" in event:
-            usage_data = event["metadata"].get("usage", {})
-            total_input_tokens = usage_data.get("inputTokens", 0)
-            total_output_tokens = usage_data.get("outputTokens", 0)
-
-        elif "guardrailAction" in event:
-            guardrail_intervened = True
-
-    if guardrail_intervened:
-        logger.warning(f"Guardrail intervened (streaming) for session {session_id}")
-
-    get_client().update_current_trace(
-        output=truncate_for_trace("".join(full_response), 5000),
-        metadata={
-            "total_input_tokens": total_input_tokens,
-            "total_output_tokens": total_output_tokens,
-            "guardrail_intervened": guardrail_intervened,
-            "source_count": len(sources),
-        },
+    # Create model and handler
+    model = _create_chatbot_model()
+    handler = LangfuseCallbackHandler(
+        session_id=session_id, user_id=user_id, tags=["chatbot", "streaming"]
     )
 
-    yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'usage': {'input_tokens': total_input_tokens, 'output_tokens': total_output_tokens}})}\n\n"
+    full_response = []
+    for chunk in model.stream(lc_messages, config={"callbacks": [handler]}):
+        if chunk.content:
+            full_response.append(chunk.content)
+            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk.content})}\n\n"
+
+    yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"

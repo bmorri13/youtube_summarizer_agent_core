@@ -3,44 +3,7 @@
 import json
 import os
 import requests
-
-
-# Tool definition for Claude API
-TOOL_DEFINITION = {
-    "name": "send_slack_notification",
-    "description": "Send a formatted notification message to Slack with video analysis summary. Uses Slack Block Kit for clean formatting.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "video_title": {
-                "type": "string",
-                "description": "Title of the YouTube video"
-            },
-            "channel_name": {
-                "type": "string",
-                "description": "Name of the YouTube channel"
-            },
-            "video_url": {
-                "type": "string",
-                "description": "URL of the YouTube video"
-            },
-            "overview": {
-                "type": "string",
-                "description": "Brief 1-2 sentence overview of the video"
-            },
-            "key_points": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "List of 3-5 key takeaways from the video"
-            },
-            "main_takeaway": {
-                "type": "string",
-                "description": "The single most important insight from the video"
-            }
-        },
-        "required": ["video_title", "channel_name", "video_url", "overview", "key_points"]
-    }
-}
+from langchain_core.tools import tool
 
 
 def build_slack_blocks(
@@ -158,31 +121,30 @@ def send_via_bot(blocks: list[dict], fallback_text: str, token: str, channel: st
     return {"method": "bot", "status": "sent", "channel": channel}
 
 
+@tool
 def send_slack_notification(
-    video_title: str = "",
-    channel_name: str = "",
-    video_url: str = "",
-    overview: str = "",
-    key_points: list[str] | None = None,
-    main_takeaway: str | None = None,
-    # Legacy support for simple message
-    message: str | None = None,
-    channel: str | None = None
-) -> dict:
-    """Send Slack notification with formatted blocks.
+    video_title: str,
+    channel_name: str,
+    video_url: str,
+    overview: str,
+    key_points: list[str],
+    main_takeaway: str = "",
+) -> str:
+    """Send a formatted notification message to Slack with video analysis summary. Uses Slack Block Kit for clean formatting.
 
-    Returns:
-        dict with 'success', 'method' or 'error' keys
+    Args:
+        video_title: Title of the YouTube video
+        channel_name: Name of the YouTube channel
+        video_url: URL of the YouTube video
+        overview: Brief 1-2 sentence overview of the video
+        key_points: List of 3-5 key takeaways from the video
+        main_takeaway: The single most important insight from the video
     """
-    # Legacy support: if only message is provided, use simple format
-    if message and not video_title:
-        return _send_simple_message(message, channel)
-
     if not video_title or not overview:
-        return {
+        return json.dumps({
             "success": False,
             "error": "video_title and overview are required"
-        }
+        })
 
     key_points = key_points or []
 
@@ -193,7 +155,7 @@ def send_slack_notification(
         video_url=video_url,
         overview=overview,
         key_points=key_points,
-        main_takeaway=main_takeaway
+        main_takeaway=main_takeaway or None
     )
 
     # Fallback text for notifications
@@ -206,78 +168,36 @@ def send_slack_notification(
     try:
         if webhook_url:
             send_via_webhook(blocks, fallback_text, webhook_url)
-            return {
+            return json.dumps({
                 "success": True,
                 "method": "webhook"
-            }
+            })
         elif bot_token:
-            target_channel = channel or default_channel
-            send_via_bot(blocks, fallback_text, bot_token, target_channel)
-            return {
+            send_via_bot(blocks, fallback_text, bot_token, default_channel)
+            return json.dumps({
                 "success": True,
                 "method": "bot",
-                "channel": target_channel
-            }
+                "channel": default_channel
+            })
         else:
-            return {
+            return json.dumps({
                 "success": True,
                 "skipped": True,
                 "message": "No Slack configuration found. Notification skipped."
-            }
+            })
 
     except requests.exceptions.Timeout:
-        return {
+        return json.dumps({
             "success": False,
             "error": "Slack request timed out"
-        }
+        })
     except requests.exceptions.RequestException as e:
-        return {
+        return json.dumps({
             "success": False,
             "error": f"Error sending Slack notification: {str(e)}"
-        }
+        })
     except Exception as e:
-        return {
+        return json.dumps({
             "success": False,
             "error": str(e)
-        }
-
-
-def _send_simple_message(message: str, channel: str | None = None) -> dict:
-    """Legacy: Send a simple text message."""
-    if not message:
-        return {
-            "success": False,
-            "error": "Message cannot be empty"
-        }
-
-    webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
-    bot_token = os.environ.get("SLACK_BOT_TOKEN")
-    default_channel = os.environ.get("SLACK_DEFAULT_CHANNEL", "#youtube-summaries")
-
-    try:
-        if webhook_url:
-            response = requests.post(
-                webhook_url,
-                json={"text": message},
-                headers={"Content-Type": "application/json"},
-                timeout=10
-            )
-            response.raise_for_status()
-            return {"success": True, "method": "webhook"}
-        elif bot_token:
-            target_channel = channel or default_channel
-            response = requests.post(
-                "https://slack.com/api/chat.postMessage",
-                json={"channel": target_channel, "text": message},
-                headers={
-                    "Authorization": f"Bearer {bot_token}",
-                    "Content-Type": "application/json"
-                },
-                timeout=10
-            )
-            response.raise_for_status()
-            return {"success": True, "method": "bot", "channel": target_channel}
-        else:
-            return {"success": True, "skipped": True, "message": "No Slack config."}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+        })

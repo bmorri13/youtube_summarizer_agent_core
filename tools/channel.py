@@ -1,26 +1,11 @@
 """YouTube channel tool for fetching latest videos via RSS feed."""
 
+import json
 import re
 import xml.etree.ElementTree as ET
 
 import requests
-
-
-# Tool definition for Claude API
-TOOL_DEFINITION = {
-    "name": "get_latest_channel_video",
-    "description": "Get the latest video from a YouTube channel. Returns video info including video_id, video_url, title, and published date. Also indicates if the video has already been processed.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "channel_url": {
-                "type": "string",
-                "description": "YouTube channel URL (supports @username, /channel/, /c/ formats)"
-            }
-        },
-        "required": ["channel_url"]
-    }
-}
+from langchain_core.tools import tool
 
 
 def extract_channel_id(channel_url: str) -> str:
@@ -129,27 +114,10 @@ def _get_video_duration(video_id: str) -> int:
         return 0
 
 
-def get_latest_channel_video(channel_url: str, min_duration_seconds: int = 90) -> dict:
-    """Fetch the latest full-length video from a YouTube channel using RSS feed.
+def _get_latest_channel_video_impl(channel_url: str, min_duration_seconds: int = 90) -> dict:
+    """Internal implementation: fetch latest full-length video from a YouTube channel.
 
     Skips YouTube Shorts (videos under min_duration_seconds).
-
-    Args:
-        channel_url: YouTube channel URL
-        min_duration_seconds: Minimum video duration to consider (default 90s to skip Shorts)
-
-    Returns:
-        dict with:
-            - success: bool
-            - video_id: str (if successful)
-            - video_url: str (if successful)
-            - title: str (if successful)
-            - published: str (if successful, ISO format)
-            - channel_id: str (if successful)
-            - channel_name: str (if successful)
-            - duration_seconds: int (if successful)
-            - is_already_processed: bool (if successful)
-            - error: str (if failed)
     """
     from .notes import is_video_processed
 
@@ -220,6 +188,7 @@ def get_latest_channel_video(channel_url: str, min_duration_seconds: int = 90) -
                 "published": published,
                 "channel_id": channel_id,
                 "channel_name": channel_name,
+                "channel_url": channel_url,
                 "duration_seconds": duration,
                 "is_already_processed": already_processed
             }
@@ -245,3 +214,26 @@ def get_latest_channel_video(channel_url: str, min_duration_seconds: int = 90) -
             "success": False,
             "error": f"Failed to parse RSS feed: {e}"
         }
+
+
+@tool
+def get_latest_channel_video(channel_url: str) -> str:
+    """Get the latest video from a YouTube channel. Returns video info including video_id, video_url, title, and published date. Also indicates if the video has already been processed.
+
+    Args:
+        channel_url: YouTube channel URL (supports @username, /channel/, /c/ formats)
+    """
+    from .notes import update_channel_checked
+
+    result = _get_latest_channel_video_impl(channel_url)
+
+    # Side effect: update channel checked timestamp on success
+    if result.get("success") and result.get("channel_id"):
+        update_channel_checked(
+            channel_id=result["channel_id"],
+            channel_name=result["channel_name"],
+            channel_url=channel_url,
+            last_video_id=result["video_id"],
+        )
+
+    return json.dumps(result)

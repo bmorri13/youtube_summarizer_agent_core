@@ -6,6 +6,7 @@ import os
 import re
 from datetime import datetime
 
+from langchain_core.tools import tool as langchain_tool
 
 logger = logging.getLogger(__name__)
 
@@ -20,39 +21,6 @@ class ProcessedIndexLoadError(Exception):
     overwrite the existing index.
     """
     pass
-
-
-# Tool definition for Claude API
-TOOL_DEFINITION = {
-    "name": "save_note",
-    "description": "Save a summary or note to storage (local filesystem or S3). Returns the path where the note was saved. For YouTube videos, include video_id, channel_id, and channel_name to track the video as processed.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "title": {
-                "type": "string",
-                "description": "Title for the note"
-            },
-            "content": {
-                "type": "string",
-                "description": "Content of the note (markdown supported)"
-            },
-            "video_id": {
-                "type": "string",
-                "description": "YouTube video ID (optional, for tracking processed videos)"
-            },
-            "channel_id": {
-                "type": "string",
-                "description": "YouTube channel ID (optional, for tracking processed videos)"
-            },
-            "channel_name": {
-                "type": "string",
-                "description": "YouTube channel name (optional, for tracking processed videos)"
-            }
-        },
-        "required": ["title", "content"]
-    }
-}
 
 
 def sanitize_filename(title: str) -> str:
@@ -100,30 +68,28 @@ def save_to_s3(title: str, content: str, bucket: str) -> str:
     return f"s3://{bucket}/{key}"
 
 
+@langchain_tool
 def save_note(
     title: str,
     content: str,
     video_id: str = None,
     channel_id: str = None,
     channel_name: str = None
-) -> dict:
-    """Save note to configured backend.
+) -> str:
+    """Save a summary or note to storage (local filesystem or S3). Returns the path where the note was saved. For YouTube videos, include video_id, channel_id, and channel_name to track the video as processed.
 
     Args:
-        title: Note title
-        content: Note content (markdown)
-        video_id: Optional YouTube video ID for tracking
-        channel_id: Optional YouTube channel ID for tracking
-        channel_name: Optional channel name for tracking
-
-    Returns:
-        dict with 'success', 'path' or 'error' keys
+        title: Title for the note
+        content: Content of the note (markdown supported)
+        video_id: YouTube video ID (optional, for tracking processed videos)
+        channel_id: YouTube channel ID (optional, for tracking processed videos)
+        channel_name: YouTube channel name (optional, for tracking processed videos)
     """
     if not content:
-        return {
+        return json.dumps({
             "success": False,
             "error": "Note content cannot be empty"
-        }
+        })
 
     backend = os.environ.get("NOTES_BACKEND", "local")
 
@@ -131,10 +97,10 @@ def save_note(
         if backend == "s3":
             bucket = os.environ.get("NOTES_S3_BUCKET")
             if not bucket:
-                return {
+                return json.dumps({
                     "success": False,
                     "error": "NOTES_S3_BUCKET not configured"
-                }
+                })
             path = save_to_s3(title, content, bucket)
         else:
             directory = os.environ.get("NOTES_LOCAL_DIR", "./notes")
@@ -150,16 +116,16 @@ def save_note(
                 note_path=path
             )
 
-        return {
+        return json.dumps({
             "success": True,
             "path": path
-        }
+        })
 
     except Exception as e:
-        return {
+        return json.dumps({
             "success": False,
             "error": f"Error saving note: {str(e)}"
-        }
+        })
 
 
 # ============================================

@@ -357,21 +357,14 @@ def main():
     print(f"   Memory: {args.memory} MB")
     print(f"   Timeout: {args.timeout} seconds")
     
-    # Check for required environment variables
-    required_env = ["ANTHROPIC_API_KEY"]
-    missing = [v for v in required_env if not os.getenv(v)]
-    if missing:
-        print(f"\n❌ Missing required environment variables: {missing}")
-        print("   Set them before deploying:")
-        print("   export ANTHROPIC_API_KEY=your-key")
-        sys.exit(1)
-    
     # Prepare environment variables for Lambda
     env_vars = {
-        "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
         "NOTES_BACKEND": os.getenv("NOTES_BACKEND", "local"),
         "NOTES_LOCAL_DIR": "/tmp/notes",  # Lambda writable directory
     }
+
+    if os.getenv("CLAUDE_MODEL"):
+        env_vars["CLAUDE_MODEL"] = os.getenv("CLAUDE_MODEL")
     
     if os.getenv("SLACK_WEBHOOK_URL"):
         env_vars["SLACK_WEBHOOK_URL"] = os.getenv("SLACK_WEBHOOK_URL")
