@@ -7,6 +7,9 @@ FROM public.ecr.aws/lambda/python:3.11
 # Set working directory
 WORKDIR ${LAMBDA_TASK_ROOT}
 
+# Install build tools needed for numpy (transitive dep from langchain-aws)
+RUN yum install -y gcc gcc-c++ && yum clean all
+
 # Copy requirements first for better layer caching
 COPY requirements.txt .
 
@@ -26,11 +29,11 @@ COPY tools/ ./tools/
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Note: USER directive is intentionally omitted for Lambda compatibility
-# Lambda's execution environment runs containers in a secure sandbox with
-# its own user isolation (sbx_user1051), regardless of the container's USER.
-# Adding USER here can break Lambda's runtime initialization.
-# nosemgrep: dockerfile.security.missing-user
+# Note: USER directive is intentionally omitted for Lambda compatibility.
+# Lambda runs containers in a secure sandbox with its own user isolation
+# (sbx_user1051), regardless of the container's USER setting.
+# Adding USER here breaks Lambda's runtime initialization.
+# nosemgrep: dockerfile.security.missing-user, dockerfile.security.missing-user-entrypoint
 
 # Use opentelemetry-instrument wrapper for ADOT auto-instrumentation
 ENTRYPOINT ["opentelemetry-instrument"]
