@@ -306,11 +306,13 @@ def chat_stream(messages: list, session_id: str = None, user_id: str = None):
     total_input_tokens = 0
     total_output_tokens = 0
     guardrail_intervened = False
+    full_response = []
 
     for event in response.get("stream", []):
         if "contentBlockDelta" in event:
             delta = event["contentBlockDelta"].get("delta", {})
             if "text" in delta:
+                full_response.append(delta["text"])
                 yield f"data: {json.dumps({'type': 'chunk', 'content': delta['text']})}\n\n"
 
         elif "metadata" in event:
@@ -325,6 +327,7 @@ def chat_stream(messages: list, session_id: str = None, user_id: str = None):
         logger.warning(f"Guardrail intervened (streaming) for session {session_id}")
 
     get_client().update_current_trace(
+        output=truncate_for_trace("".join(full_response), 5000),
         metadata={
             "total_input_tokens": total_input_tokens,
             "total_output_tokens": total_output_tokens,
