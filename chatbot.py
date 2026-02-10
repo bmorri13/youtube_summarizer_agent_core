@@ -218,10 +218,13 @@ def _converse(system_prompt: str, converse_messages: list):
     return response
 
 
+@observe(name="chat_stream")
 def chat_stream(messages: list, session_id: str = None):
     """Streaming chat with RAG retrieval. Yields SSE-formatted JSON strings."""
     logger = get_logger()
     session_id = session_id or str(uuid.uuid4())
+
+    get_client().update_current_trace(session_id=session_id)
 
     # Extract latest user message for retrieval
     user_query = ""
