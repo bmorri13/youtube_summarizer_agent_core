@@ -8,7 +8,7 @@ import boto3
 from dotenv import load_dotenv
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import SystemMessage, HumanMessage
-from langfuse.langchain import LangfuseCallbackHandler
+from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
 from langgraph.prebuilt import create_react_agent
 
 from observability import get_logger, flush_traces

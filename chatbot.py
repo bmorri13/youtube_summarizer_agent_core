@@ -11,7 +11,7 @@ import uuid
 import boto3
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from langfuse.langchain import LangfuseCallbackHandler
+from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
 
 from observability import sanitize_log_value, get_logger
 
