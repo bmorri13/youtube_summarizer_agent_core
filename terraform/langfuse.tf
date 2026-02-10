@@ -314,4 +314,6 @@ resource "aws_route53_record" "langfuse" {
     zone_id                = aws_lb.langfuse[0].zone_id
     evaluate_target_health = true
   }
+
+  allow_overwrite = true
 }
