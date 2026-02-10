@@ -77,6 +77,16 @@ def sanitize_log_dict(data: dict, max_length: int = 1000) -> dict:
     return sanitized
 
 
+def truncate_for_trace(value, max_length: int = 5000) -> str:
+    """Truncate a value for Langfuse trace storage."""
+    if value is None:
+        return ""
+    str_value = str(value)
+    if len(str_value) > max_length:
+        return str_value[:max_length] + f"...[truncated, {len(str_value)} total chars]"
+    return str_value
+
+
 def setup_logging() -> logging.Logger:
     """Initialize logging with console handler (stdout captured by ECS awslogs / Lambda)."""
     global _logger
@@ -111,10 +121,15 @@ def get_logger() -> logging.Logger:
 
 
 def flush_traces():
-    """Force flush any pending ADOT traces (needed for Lambda before cold shutdown)."""
+    """Force flush pending ADOT traces and Langfuse events."""
     try:
         provider = trace.get_tracer_provider()
         if hasattr(provider, 'force_flush'):
             provider.force_flush(timeout_millis=5000)
     except Exception as e:
-        print(f"[Observability] Error flushing traces: {e}")
+        print(f"[Observability] Error flushing ADOT traces: {e}")
+    try:
+        from langfuse import get_client
+        get_client().flush()
+    except Exception as e:
+        print(f"[Observability] Error flushing Langfuse: {e}")

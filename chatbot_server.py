@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -79,6 +79,11 @@ if FRONTEND_DIST.exists() and (FRONTEND_DIST / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="frontend-assets")
 
 
+def _extract_user_id(request: Request) -> str | None:
+    """Extract user identity from Cloudflare Access header."""
+    return request.headers.get("Cf-Access-Authenticated-User-Email")
+
+
 # --- Endpoints ---
 
 @app.get("/")
@@ -113,27 +118,29 @@ async def health():
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(request: ChatRequest, raw_request: Request):
     """Non-streaming chat with RAG retrieval."""
     if not os.environ.get("KNOWLEDGE_BASE_ID"):
         raise HTTPException(status_code=503, detail="Knowledge Base not configured")
 
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    user_id = _extract_user_id(raw_request)
 
-    result = chat(messages, session_id=request.session_id)
+    result = chat(messages, session_id=request.session_id, user_id=user_id)
     return ChatResponse(**result)
 
 
 @app.post("/api/chat/stream")
-async def chat_stream_endpoint(request: ChatRequest):
+async def chat_stream_endpoint(request: ChatRequest, raw_request: Request):
     """Streaming chat with RAG retrieval via SSE."""
     if not os.environ.get("KNOWLEDGE_BASE_ID"):
         raise HTTPException(status_code=503, detail="Knowledge Base not configured")
 
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    user_id = _extract_user_id(raw_request)
 
     return StreamingResponse(
-        chat_stream(messages, session_id=request.session_id),
+        chat_stream(messages, session_id=request.session_id, user_id=user_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

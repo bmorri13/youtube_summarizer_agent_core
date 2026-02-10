@@ -14,6 +14,7 @@ from langfuse import observe, get_client
 from observability import (
     sanitize_log_value,
     get_logger,
+    truncate_for_trace,
 )
 
 # Configuration
@@ -120,12 +121,16 @@ def _build_converse_params(system_prompt: str, messages: list, stream: bool = Fa
 
 
 @observe()
-def chat(messages: list, session_id: str = None):
+def chat(messages: list, session_id: str = None, user_id: str = None):
     """Non-streaming chat with RAG retrieval."""
     logger = get_logger()
     session_id = session_id or str(uuid.uuid4())
 
-    get_client().update_current_trace(session_id=session_id)
+    get_client().update_current_trace(
+        session_id=session_id,
+        user_id=user_id,
+        tags=["chatbot"],
+    )
 
     # Extract latest user message for retrieval
     user_query = ""
@@ -167,8 +172,17 @@ def chat(messages: list, session_id: str = None):
             "content": [{"text": msg["content"]}],
         })
 
+    # Update trace with input
+    get_client().update_current_trace(
+        input={"query": user_query, "message_count": len(messages)},
+    )
+
     # Call Converse API
-    response = _converse(system_prompt, converse_messages)
+    try:
+        response = _converse(system_prompt, converse_messages)
+    except Exception as e:
+        get_client().update_current_trace(metadata={"error": str(e)})
+        raise
 
     # Extract response
     output = response.get("output", {})
@@ -182,6 +196,7 @@ def chat(messages: list, session_id: str = None):
     stop_reason = response.get("stopReason", "")
     if stop_reason == "guardrail_intervened":
         logger.warning(f"Guardrail intervened for session {session_id}")
+        get_client().update_current_trace(metadata={"guardrail_intervened": True})
 
     # Extract usage for response
     usage_data = response.get("usage", {})
@@ -189,6 +204,11 @@ def chat(messages: list, session_id: str = None):
         "input_tokens": usage_data.get("inputTokens", 0),
         "output_tokens": usage_data.get("outputTokens", 0),
     }
+
+    get_client().update_current_trace(
+        output=truncate_for_trace(response_text, 5000),
+        metadata={"source_count": len(sources), **usage},
+    )
 
     return {
         "response": response_text,
@@ -219,12 +239,16 @@ def _converse(system_prompt: str, converse_messages: list):
 
 
 @observe(name="chat_stream")
-def chat_stream(messages: list, session_id: str = None):
+def chat_stream(messages: list, session_id: str = None, user_id: str = None):
     """Streaming chat with RAG retrieval. Yields SSE-formatted JSON strings."""
     logger = get_logger()
     session_id = session_id or str(uuid.uuid4())
 
-    get_client().update_current_trace(session_id=session_id)
+    get_client().update_current_trace(
+        session_id=session_id,
+        user_id=user_id,
+        tags=["chatbot", "streaming"],
+    )
 
     # Extract latest user message for retrieval
     user_query = ""
@@ -237,6 +261,10 @@ def chat_stream(messages: list, session_id: str = None):
         yield f"data: {json.dumps({'type': 'chunk', 'content': 'Please provide a question.'})}\n\n"
         yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
         return
+
+    get_client().update_current_trace(
+        input={"query": user_query, "message_count": len(messages)},
+    )
 
     # Retrieve from KB
     kb_results = retrieve_from_knowledge_base(user_query)
@@ -269,7 +297,11 @@ def chat_stream(messages: list, session_id: str = None):
     # Call ConverseStream API
     client = _get_runtime_client()
     params = _build_converse_params(system_prompt, converse_messages, stream=True)
-    response = client.converse_stream(**params)
+    try:
+        response = client.converse_stream(**params)
+    except Exception as e:
+        get_client().update_current_trace(metadata={"error": str(e)})
+        raise
 
     total_input_tokens = 0
     total_output_tokens = 0
@@ -291,5 +323,14 @@ def chat_stream(messages: list, session_id: str = None):
 
     if guardrail_intervened:
         logger.warning(f"Guardrail intervened (streaming) for session {session_id}")
+
+    get_client().update_current_trace(
+        metadata={
+            "total_input_tokens": total_input_tokens,
+            "total_output_tokens": total_output_tokens,
+            "guardrail_intervened": guardrail_intervened,
+            "source_count": len(sources),
+        },
+    )
 
     yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'usage': {'input_tokens': total_input_tokens, 'output_tokens': total_output_tokens}})}\n\n"

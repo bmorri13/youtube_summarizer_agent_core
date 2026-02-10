@@ -5,13 +5,15 @@ import json
 from dotenv import load_dotenv
 load_dotenv()
 
-from observability import get_logger
+from langfuse import observe, get_client
+from observability import get_logger, flush_traces
 
 from agent import run_agent, run_agent_with_transcript
 
 logger = get_logger()
 
 
+@observe(name="lambda_handler")
 def handler(event, context):
     """AWS Lambda handler function.
 
@@ -42,10 +44,21 @@ def handler(event, context):
     """
     request_id = getattr(context, 'aws_request_id', None) if context else None
 
+    is_prefetched = isinstance(event, dict) and event.get("process_transcript")
+    has_batch = isinstance(event, dict) and event.get("channel_urls")
+    invocation_type = "prefetched" if is_prefetched else "batch" if has_batch else "single"
+
+    get_client().update_current_trace(
+        session_id=request_id,
+        user_id="lambda",
+        metadata={"aws_request_id": request_id, "invocation_type": invocation_type},
+        tags=["lambda", invocation_type],
+    )
+
     try:
         # Handle pre-fetched transcript from local fetcher
-        if isinstance(event, dict) and event.get("process_transcript"):
-            return _process_prefetched_transcript(event)
+        if is_prefetched:
+            return _process_prefetched_transcript(event, request_id=request_id)
 
         video_url = None
         channel_url = None
@@ -77,15 +90,15 @@ def handler(event, context):
 
         # Handle multiple channels
         if channel_urls and isinstance(channel_urls, list):
-            return _process_multiple_channels(channel_urls)
+            return _process_multiple_channels(channel_urls, request_id=request_id)
 
         # Handle single channel
         if channel_url:
-            return _process_single_url(channel_url, "channel_url")
+            return _process_single_url(channel_url, "channel_url", request_id=request_id)
 
         # Handle video URL
         if video_url:
-            return _process_single_url(video_url, "video_url")
+            return _process_single_url(video_url, "video_url", request_id=request_id)
 
         # No valid input
         return {
@@ -102,10 +115,13 @@ def handler(event, context):
         }
     except Exception as e:
         logger.error(f"Lambda handler error: {e}")
+        get_client().update_current_span(level="ERROR", status_message=str(e))
         raise
+    finally:
+        flush_traces()
 
 
-def _process_prefetched_transcript(event: dict) -> dict:
+def _process_prefetched_transcript(event: dict, request_id: str = None) -> dict:
     """Process a transcript that was pre-fetched by local fetcher."""
     video_url = event["video_url"]
     video_title = event["video_title"]
@@ -127,7 +143,10 @@ def _process_prefetched_transcript(event: dict) -> dict:
             video_title=video_title,
             channel_id=channel_id,
             channel_name=channel_name,
-            transcript=transcript
+            transcript=transcript,
+            session_id=request_id,
+            user_id="lambda",
+            extra_tags=["lambda", "prefetched"],
         )
 
         return {
@@ -144,10 +163,10 @@ def _process_prefetched_transcript(event: dict) -> dict:
         }
 
 
-def _process_single_url(url: str, url_type: str) -> dict:
+def _process_single_url(url: str, url_type: str, request_id: str = None) -> dict:
     """Process a single video or channel URL."""
     try:
-        result = run_agent(url)
+        result = run_agent(url, session_id=request_id, user_id="lambda", extra_tags=["lambda"])
 
         return {
             "statusCode": 200,
@@ -170,7 +189,7 @@ def _process_single_url(url: str, url_type: str) -> dict:
         }
 
 
-def _process_multiple_channels(channel_urls: list) -> dict:
+def _process_multiple_channels(channel_urls: list, request_id: str = None) -> dict:
     """Process multiple channel URLs for scheduled runs."""
     results = []
 
@@ -183,7 +202,7 @@ def _process_multiple_channels(channel_urls: list) -> dict:
             continue
 
         try:
-            result = run_agent(channel_url)
+            result = run_agent(channel_url, session_id=request_id, user_id="lambda", extra_tags=["lambda", "batch"])
             results.append({
                 "channel_url": channel_url,
                 "success": True,

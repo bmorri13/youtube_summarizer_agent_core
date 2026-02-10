@@ -18,7 +18,7 @@ from tools import (
     mark_video_processed,
     update_channel_checked,
 )
-from observability import get_logger, sanitize_log_value, flush_traces
+from observability import get_logger, sanitize_log_value, flush_traces, truncate_for_trace
 
 # Load environment variables
 load_dotenv()
@@ -76,40 +76,54 @@ def handle_tool_call(tool_name: str, tool_input: dict) -> str:
     safe_tool_name = sanitize_log_value(tool_name)
     logger.info(f"Executing tool: {safe_tool_name}")
 
-    if tool_name == "get_transcript":
-        result = get_transcript(tool_input["video_url"])
-    elif tool_name == "get_latest_channel_video":
-        result = get_latest_channel_video(tool_input["channel_url"])
-        if result.get("success"):
-            update_channel_checked(
-                channel_id=result.get("channel_id"),
-                channel_name=result.get("channel_name"),
-                channel_url=tool_input["channel_url"],
-                last_video_id=result.get("video_id")
+    try:
+        if tool_name == "get_transcript":
+            result = get_transcript(tool_input["video_url"])
+        elif tool_name == "get_latest_channel_video":
+            result = get_latest_channel_video(tool_input["channel_url"])
+            if result.get("success"):
+                update_channel_checked(
+                    channel_id=result.get("channel_id"),
+                    channel_name=result.get("channel_name"),
+                    channel_url=tool_input["channel_url"],
+                    last_video_id=result.get("video_id")
+                )
+        elif tool_name == "save_note":
+            result = save_note(
+                title=tool_input["title"],
+                content=tool_input["content"],
+                video_id=tool_input.get("video_id"),
+                channel_id=tool_input.get("channel_id"),
+                channel_name=tool_input.get("channel_name")
             )
-    elif tool_name == "save_note":
-        result = save_note(
-            title=tool_input["title"],
-            content=tool_input["content"],
-            video_id=tool_input.get("video_id"),
-            channel_id=tool_input.get("channel_id"),
-            channel_name=tool_input.get("channel_name")
+        elif tool_name == "send_slack_notification":
+            result = send_slack_notification(
+                video_title=tool_input.get("video_title", ""),
+                channel_name=tool_input.get("channel_name", ""),
+                video_url=tool_input.get("video_url", ""),
+                overview=tool_input.get("overview", ""),
+                key_points=tool_input.get("key_points", []),
+                main_takeaway=tool_input.get("main_takeaway"),
+                message=tool_input.get("message"),
+                channel=tool_input.get("channel")
+            )
+        else:
+            result = {"success": False, "error": f"Unknown tool: {tool_name}"}
+    except Exception as e:
+        result = {"success": False, "error": str(e)}
+        get_client().update_current_span(
+            level="ERROR",
+            status_message=f"Tool {tool_name} failed: {e}",
         )
-    elif tool_name == "send_slack_notification":
-        result = send_slack_notification(
-            video_title=tool_input.get("video_title", ""),
-            channel_name=tool_input.get("channel_name", ""),
-            video_url=tool_input.get("video_url", ""),
-            overview=tool_input.get("overview", ""),
-            key_points=tool_input.get("key_points", []),
-            main_takeaway=tool_input.get("main_takeaway"),
-            message=tool_input.get("message"),
-            channel=tool_input.get("channel")
-        )
-    else:
-        result = {"success": False, "error": f"Unknown tool: {tool_name}"}
+
+    # Capture tool I/O in Langfuse span
+    safe_input = dict(tool_input)
+    if tool_name == "save_note" and "content" in safe_input:
+        safe_input["content"] = truncate_for_trace(safe_input["content"], 500)
 
     get_client().update_current_span(
+        input=safe_input,
+        output=truncate_for_trace(json.dumps(result), 5000),
         metadata={"tool_name": tool_name, "success": result.get("success", True)},
     )
 
@@ -140,7 +154,7 @@ def _llm_call(client, model, system_prompt, tools, messages, turn):
 
 
 @observe()
-def run_agent(video_url: str, max_turns: int = 10, session_id: str = None) -> str:
+def run_agent(video_url: str, max_turns: int = 10, session_id: str = None, user_id: str = None, extra_tags: list = None) -> str:
     """Run the YouTube analyzer agent on a video URL.
 
     Uses the Anthropic Messages API with tool use in an agentic loop.
@@ -148,9 +162,15 @@ def run_agent(video_url: str, max_turns: int = 10, session_id: str = None) -> st
     logger = get_logger()
     session_id = session_id or str(uuid.uuid4())
 
+    is_channel = any(p in video_url for p in ["/@", "/channel/", "/c/", "/user/"])
+    tags = list(extra_tags or []) + ["agent", "channel" if is_channel else "video"]
+
     get_client().update_current_trace(
         session_id=session_id,
+        user_id=user_id,
+        input={"video_url": video_url},
         metadata={"video_url": video_url},
+        tags=tags,
     )
 
     try:
@@ -216,6 +236,7 @@ def run_agent(video_url: str, max_turns: int = 10, session_id: str = None) -> st
                 break
 
         get_client().update_current_trace(
+            output=truncate_for_trace(final_response, 10000),
             metadata={
                 "video_url": video_url,
                 "total_turns": turn + 1,
@@ -225,6 +246,10 @@ def run_agent(video_url: str, max_turns: int = 10, session_id: str = None) -> st
         )
 
         return final_response
+    except Exception as e:
+        get_client().update_current_trace(metadata={"error": str(e)})
+        get_client().update_current_span(level="ERROR", status_message=str(e))
+        raise
     finally:
         flush_traces()
 
@@ -238,7 +263,9 @@ def run_agent_with_transcript(
     transcript: str,
     channel_id: str = None,
     max_turns: int = 10,
-    session_id: str = None
+    session_id: str = None,
+    user_id: str = None,
+    extra_tags: list = None,
 ) -> str:
     """Run agent with a pre-fetched transcript (skip transcript fetching step).
 
@@ -247,10 +274,14 @@ def run_agent_with_transcript(
     """
     logger = get_logger()
     session_id = session_id or str(uuid.uuid4())
+    tags = list(extra_tags or []) + ["agent", "prefetched"]
 
     get_client().update_current_trace(
         session_id=session_id,
+        user_id=user_id,
+        input={"video_url": video_url, "video_id": video_id},
         metadata={"video_url": video_url, "video_id": video_id, "prefetched_transcript": True},
+        tags=tags,
     )
 
     # Filter out tools that shouldn't be used with pre-fetched transcripts
@@ -344,6 +375,7 @@ Proceed directly to:
                 break
 
         get_client().update_current_trace(
+            output=truncate_for_trace(final_response, 10000),
             metadata={
                 "video_url": video_url,
                 "total_turns": turn + 1,
@@ -354,6 +386,10 @@ Proceed directly to:
         )
 
         return final_response
+    except Exception as e:
+        get_client().update_current_trace(metadata={"error": str(e)})
+        get_client().update_current_span(level="ERROR", status_message=str(e))
+        raise
     finally:
         flush_traces()
 
