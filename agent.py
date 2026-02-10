@@ -93,13 +93,21 @@ def _create_model():
     return ChatBedrockConverse(**kwargs)
 
 
-def _create_langfuse_handler(session_id=None, user_id=None, tags=None):
-    """Create Langfuse callback handler with trace metadata."""
-    return LangfuseCallbackHandler(
-        session_id=session_id,
-        user_id=user_id,
-        tags=tags or [],
-    )
+def _build_config(session_id=None, user_id=None, tags=None, max_turns=10):
+    """Build LangGraph config with Langfuse callback handler and metadata."""
+    handler = LangfuseCallbackHandler()
+    metadata = {}
+    if session_id:
+        metadata["langfuse_session_id"] = session_id
+    if user_id:
+        metadata["langfuse_user_id"] = user_id
+    if tags:
+        metadata["langfuse_tags"] = tags
+    return {
+        "callbacks": [handler],
+        "recursion_limit": (max_turns * 2) + 1,
+        "metadata": metadata,
+    }
 
 
 def run_agent(video_url: str, max_turns: int = 10, session_id: str = None,
@@ -113,13 +121,8 @@ def run_agent(video_url: str, max_turns: int = 10, session_id: str = None,
 
     model = _create_model()
     graph = create_react_agent(model, tools=ALL_TOOLS)
-    handler = _create_langfuse_handler(session_id=session_id, user_id=user_id, tags=tags)
 
-    # recursion_limit: each turn = LLM call + tool call = 2 steps
-    config = {
-        "callbacks": [handler],
-        "recursion_limit": (max_turns * 2) + 1,
-    }
+    config = _build_config(session_id=session_id, user_id=user_id, tags=tags, max_turns=max_turns)
 
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
@@ -160,12 +163,8 @@ def run_agent_with_transcript(
 
     model = _create_model()
     graph = create_react_agent(model, tools=filtered_tools)
-    handler = _create_langfuse_handler(session_id=session_id, user_id=user_id, tags=tags)
 
-    config = {
-        "callbacks": [handler],
-        "recursion_limit": (max_turns * 2) + 1,
-    }
+    config = _build_config(session_id=session_id, user_id=user_id, tags=tags, max_turns=max_turns)
 
     # Build prompt with transcript embedded
     prefetch_prompt = f"""I already have the transcript for this video:

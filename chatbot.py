@@ -164,11 +164,17 @@ def chat(messages: list, session_id: str = None, user_id: str = None):
 
     # Create model and handler
     model = _create_chatbot_model()
-    handler = LangfuseCallbackHandler(
-        session_id=session_id, user_id=user_id, tags=["chatbot"]
-    )
+    handler = LangfuseCallbackHandler()
+    config = {
+        "callbacks": [handler],
+        "metadata": {
+            "langfuse_session_id": session_id,
+            "langfuse_user_id": user_id,
+            "langfuse_tags": ["chatbot"],
+        },
+    }
 
-    response = model.invoke(lc_messages, config={"callbacks": [handler]})
+    response = model.invoke(lc_messages, config=config)
 
     # Check for guardrail intervention
     stop_reason = response.response_metadata.get("stopReason", "")
@@ -218,12 +224,18 @@ def chat_stream(messages: list, session_id: str = None, user_id: str = None):
 
     # Create model and handler
     model = _create_chatbot_model()
-    handler = LangfuseCallbackHandler(
-        session_id=session_id, user_id=user_id, tags=["chatbot", "streaming"]
-    )
+    handler = LangfuseCallbackHandler()
+    config = {
+        "callbacks": [handler],
+        "metadata": {
+            "langfuse_session_id": session_id,
+            "langfuse_user_id": user_id,
+            "langfuse_tags": ["chatbot", "streaming"],
+        },
+    }
 
     full_response = []
-    for chunk in model.stream(lc_messages, config={"callbacks": [handler]}):
+    for chunk in model.stream(lc_messages, config=config):
         if chunk.content:
             full_response.append(chunk.content)
             yield f"data: {json.dumps({'type': 'chunk', 'content': chunk.content})}\n\n"
