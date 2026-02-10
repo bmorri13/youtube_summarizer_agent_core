@@ -2,13 +2,10 @@
 # Works for both local development and AWS Lambda deployment
 
 # Use AWS Lambda Python base image for Lambda compatibility
-FROM public.ecr.aws/lambda/python:3.11
+FROM public.ecr.aws/lambda/python:3.12
 
 # Set working directory
 WORKDIR ${LAMBDA_TASK_ROOT}
-
-# Install build tools needed for numpy (transitive dep from langchain-aws)
-RUN yum install -y gcc gcc-c++ && yum clean all
 
 # Copy requirements first for better layer caching
 COPY requirements.txt .
