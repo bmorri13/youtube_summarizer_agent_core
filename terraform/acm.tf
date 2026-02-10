@@ -15,11 +15,6 @@ resource "aws_acm_certificate" "alb" {
   }
 }
 
-data "aws_route53_zone" "main" {
-  count   = var.enable_knowledge_base ? 1 : 0
-  zone_id = var.route53_zone_id
-}
-
 resource "aws_route53_record" "acm_validation" {
   for_each = var.enable_knowledge_base ? {
     for dvo in aws_acm_certificate.alb[0].domain_validation_options : dvo.domain_name => {
