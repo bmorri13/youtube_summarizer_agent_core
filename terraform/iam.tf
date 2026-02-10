@@ -71,6 +71,27 @@ resource "aws_iam_role_policy" "lambda_xray" {
   })
 }
 
+# Bedrock agent permissions (always needed - agent uses Bedrock for LLM calls)
+resource "aws_iam_role_policy" "lambda_bedrock_agent" {
+  name = "${var.project_name}-bedrock-agent"
+  role = aws_iam_role.lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ]
+      Resource = [
+        "arn:aws:bedrock:*::foundation-model/anthropic.*",
+        "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/us.anthropic.*"
+      ]
+    }]
+  })
+}
+
 # Bedrock chatbot permissions (conditional on Knowledge Base)
 resource "aws_iam_role_policy" "lambda_bedrock_chatbot" {
   count = var.enable_knowledge_base ? 1 : 0
@@ -84,17 +105,6 @@ resource "aws_iam_role_policy" "lambda_bedrock_chatbot" {
         Effect   = "Allow"
         Action   = ["bedrock:Retrieve"]
         Resource = [aws_bedrockagent_knowledge_base.notes[0].arn]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "bedrock:InvokeModel",
-          "bedrock:InvokeModelWithResponseStream"
-        ]
-        Resource = [
-          "arn:aws:bedrock:${var.aws_region}::foundation-model/anthropic.*",
-          "arn:aws:bedrock:us.*::foundation-model/anthropic.*"
-        ]
       },
       {
         Effect = "Allow"
