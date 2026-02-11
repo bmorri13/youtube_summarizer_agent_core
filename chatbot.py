@@ -19,29 +19,21 @@ from observability import sanitize_log_value, get_logger
 _langfuse_client = None
 
 
+def _get_langfuse_client():
+    global _langfuse_client
+    if _langfuse_client is None:
+        from langfuse import Langfuse
+        _langfuse_client = Langfuse()
+    return _langfuse_client
+
+
 def _update_langfuse_trace(user_query: str, response_text: str):
     """Update the current OTEL trace in Langfuse with input/output for the traces list view."""
-    global _langfuse_client
     logger = get_logger()
     try:
-        from opentelemetry import trace as otel_trace
-
-        span = otel_trace.get_current_span()
-        ctx = span.get_span_context()
-        if not ctx or not ctx.trace_id:
-            logger.debug("No OTEL trace context available for Langfuse trace update")
-            return
-
-        trace_id = format(ctx.trace_id, '032x')
-        logger.info(f"Updating Langfuse trace {trace_id} with input/output")
-
-        if _langfuse_client is None:
-            from langfuse import Langfuse
-            _langfuse_client = Langfuse()
-
-        _langfuse_client.trace(id=trace_id, input=user_query, output=response_text)
-        _langfuse_client.flush()
-        logger.info(f"Langfuse trace {trace_id} updated and flushed")
+        client = _get_langfuse_client()
+        client.update_current_trace(input=user_query, output=response_text)
+        logger.info("Langfuse trace updated with input/output")
     except Exception as e:
         logger.warning(f"Failed to update Langfuse trace: {e}")
 
