@@ -12,6 +12,7 @@ import sys
 import time
 
 import boto3
+from botocore.config import Config
 from youtube_transcript_api import YouTubeTranscriptApi
 
 from tools.channel import _get_latest_channel_video_impl as get_latest_channel_video
@@ -201,7 +202,12 @@ def fetch_and_process(channel_url: str) -> bool:
     # 4. Send to Lambda for processing (summarize, save notes, Slack)
     try:
         lambda_client = boto3.client(
-            "lambda", region_name=os.getenv("AWS_REGION", "us-east-1")
+            "lambda",
+            region_name=os.getenv("AWS_REGION", "us-east-1"),
+            config=Config(
+                read_timeout=600,  # Lambda can take up to 5min
+                retries={"max_attempts": 0},  # No retries — prevent duplicate processing
+            ),
         )
 
         payload = {
