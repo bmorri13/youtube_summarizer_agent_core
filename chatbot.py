@@ -15,6 +15,31 @@ from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
 
 from observability import sanitize_log_value, get_logger
 
+# Langfuse trace-level update support
+_langfuse_client = None
+
+
+def _update_langfuse_trace(user_query: str, response_text: str):
+    """Update the current OTEL trace in Langfuse with input/output for the traces list view."""
+    global _langfuse_client
+    try:
+        from opentelemetry import trace as otel_trace
+
+        span = otel_trace.get_current_span()
+        ctx = span.get_span_context()
+        if not ctx or not ctx.trace_id:
+            return
+
+        trace_id = format(ctx.trace_id, '032x')
+
+        if _langfuse_client is None:
+            from langfuse import Langfuse
+            _langfuse_client = Langfuse()
+
+        _langfuse_client.trace(id=trace_id, input=user_query, output=response_text)
+    except Exception:
+        pass  # Graceful degradation — don't break chat if Langfuse update fails
+
 # Configuration
 KNOWLEDGE_BASE_ID = os.environ.get("KNOWLEDGE_BASE_ID", "")
 CHATBOT_MODEL_ID = os.environ.get("CHATBOT_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
@@ -194,9 +219,12 @@ def chat(messages: list, session_id: str = None, user_id: str = None):
         logger.warning(f"Guardrail intervened for session {session_id}")
 
     usage = response.usage_metadata or {}
+    response_text = _extract_text(response.content)
+
+    _update_langfuse_trace(user_query, response_text)
 
     return {
-        "response": _extract_text(response.content),
+        "response": response_text,
         "sources": sources,
         "usage": {
             "input_tokens": usage.get("input_tokens", 0),
@@ -252,5 +280,7 @@ def chat_stream(messages: list, session_id: str = None, user_id: str = None):
         if text:
             full_response.append(text)
             yield f"data: {json.dumps({'type': 'chunk', 'content': text})}\n\n"
+
+    _update_langfuse_trace(user_query, "".join(full_response))
 
     yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
