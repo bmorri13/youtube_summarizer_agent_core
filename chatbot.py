@@ -22,15 +22,18 @@ _langfuse_client = None
 def _update_langfuse_trace(user_query: str, response_text: str):
     """Update the current OTEL trace in Langfuse with input/output for the traces list view."""
     global _langfuse_client
+    logger = get_logger()
     try:
         from opentelemetry import trace as otel_trace
 
         span = otel_trace.get_current_span()
         ctx = span.get_span_context()
         if not ctx or not ctx.trace_id:
+            logger.debug("No OTEL trace context available for Langfuse trace update")
             return
 
         trace_id = format(ctx.trace_id, '032x')
+        logger.info(f"Updating Langfuse trace {trace_id} with input/output")
 
         if _langfuse_client is None:
             from langfuse import Langfuse
@@ -38,8 +41,9 @@ def _update_langfuse_trace(user_query: str, response_text: str):
 
         _langfuse_client.trace(id=trace_id, input=user_query, output=response_text)
         _langfuse_client.flush()
-    except Exception:
-        pass  # Graceful degradation — don't break chat if Langfuse update fails
+        logger.info(f"Langfuse trace {trace_id} updated and flushed")
+    except Exception as e:
+        logger.warning(f"Failed to update Langfuse trace: {e}")
 
 # Configuration
 KNOWLEDGE_BASE_ID = os.environ.get("KNOWLEDGE_BASE_ID", "")
