@@ -245,8 +245,10 @@ resource "aws_ecs_task_definition" "chatbot" {
         { name = "OTEL_LOGS_EXPORTER", value = "none" },
         { name = "OTEL_RESOURCE_ATTRIBUTES", value = "service.name=${var.project_name}-chatbot,aws.log.group.names=/aws/bedrock-agentcore/runtimes/${var.project_name}-chatbot" },
         { name = "OTEL_EXPORTER_OTLP_LOGS_HEADERS", value = "x-aws-log-group=/aws/bedrock-agentcore/runtimes/${var.project_name}-chatbot,x-aws-log-stream=runtime-logs,x-aws-metric-namespace=bedrock-agentcore" },
-        { name = "OTEL_PYTHON_EXCLUDED_URLS", value = "health,^/$,^/assets,/api/chat" },
-        { name = "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS", value = "health,^/$,^/assets,/api/chat" },
+        { name = "OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", value = "4096" },
+        { name = "OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", value = "128" },
+        { name = "OTEL_PYTHON_EXCLUDED_URLS", value = "health,^/$,^/assets" },
+        { name = "OTEL_PYTHON_FASTAPI_EXCLUDED_URLS", value = "health,^/$,^/assets" },
       ] : []
     )
 
@@ -377,7 +379,12 @@ resource "aws_iam_role_policy" "ecs_task_xray" {
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+      Action   = [
+        "xray:PutTraceSegments",
+        "xray:PutTelemetryRecords",
+        "xray:GetSamplingRules",
+        "xray:GetSamplingTargets"
+      ]
       Resource = "*"
     }]
   })
