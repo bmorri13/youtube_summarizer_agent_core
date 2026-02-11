@@ -11,10 +11,22 @@ resource "aws_cloudwatch_log_group" "agentcore" {
   retention_in_days = var.log_retention_days
 }
 
+resource "aws_cloudwatch_log_stream" "agentcore" {
+  count          = var.enable_observability ? 1 : 0
+  name           = "runtime-logs"
+  log_group_name = aws_cloudwatch_log_group.agentcore[0].name
+}
+
 resource "aws_cloudwatch_log_group" "agentcore_chatbot" {
   count             = var.enable_knowledge_base && var.enable_observability ? 1 : 0
   name              = "/aws/bedrock-agentcore/runtimes/${var.project_name}-chatbot"
   retention_in_days = var.log_retention_days
+}
+
+resource "aws_cloudwatch_log_stream" "agentcore_chatbot" {
+  count          = var.enable_knowledge_base && var.enable_observability ? 1 : 0
+  name           = "runtime-logs"
+  log_group_name = aws_cloudwatch_log_group.agentcore_chatbot[0].name
 }
 
 # SNS Topic for alarms (optional)
