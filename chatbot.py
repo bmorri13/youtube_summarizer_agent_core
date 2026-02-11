@@ -37,6 +37,7 @@ def _update_langfuse_trace(user_query: str, response_text: str):
             _langfuse_client = Langfuse()
 
         _langfuse_client.trace(id=trace_id, input=user_query, output=response_text)
+        _langfuse_client.flush()
     except Exception:
         pass  # Graceful degradation — don't break chat if Langfuse update fails
 
