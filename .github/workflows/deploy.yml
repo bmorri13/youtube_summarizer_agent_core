@@ -52,7 +52,9 @@ jobs:
             printf 'LOG_LEVEL=INFO\n'
           } > /tmp/dotenv
 
-          # Copy to server (overwrite existing .env)
+          # Ensure target directory exists and copy .env to server
+          ssh -o StrictHostKeyChecking=no ${TS_SSH_USER}@${TS_SSH_HOST} \
+            "mkdir -p /opt/docker/youtube-analyzer"
           scp -o StrictHostKeyChecking=no /tmp/dotenv \
             ${TS_SSH_USER}@${TS_SSH_HOST}:/opt/docker/youtube-analyzer/.env
           rm -f /tmp/dotenv
