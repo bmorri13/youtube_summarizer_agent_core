@@ -1,19 +1,15 @@
-langchain-aws>=0.2.0
+langchain-anthropic>=0.3.0
 langgraph>=0.2.0
 langchain>=0.3.0
 langchain-core>=0.3.0
 youtube-transcript-api>=1.2.3
 fastapi>=0.115.0
 uvicorn>=0.32.0
-boto3>=1.35.0
 requests>=2.32.0
 python-dotenv>=1.0.0
+feedparser>=6.0.0
+openai>=1.0.0
+supabase>=2.0.0
 
-# LLM Observability
-langfuse>=2.0.0
-
-# AWS Bedrock AgentCore Observability (using ADOT)
-# aws-opentelemetry-distro brings in all required OpenTelemetry dependencies
-aws-opentelemetry-distro
-# LLM Auto-Instrumentation for AgentCore GenAI Observability
-opentelemetry-instrumentation-langchain
+# Optional: only needed if NOTES_BACKEND=s3
+boto3>=1.35.0

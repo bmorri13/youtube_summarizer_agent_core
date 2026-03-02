@@ -1,20 +1,14 @@
-"""Observability utilities - logging, sanitization, and trace flushing.
+"""Observability utilities - logging and sanitization.
 
 Provides:
-- Structured logging (stdout captured by ECS awslogs / Lambda)
+- Structured logging (stdout)
 - Log injection prevention via input sanitization
-- ADOT trace flush for Lambda (ensures spans are exported before cold shutdown)
-
-LLM-level observability is handled by Langfuse (via LangfuseCallbackHandler in LangChain).
-Infrastructure tracing (HTTP latency, cold starts, Bedrock API errors) remains with ADOT/X-Ray.
 """
 
 import os
 import logging
 import re
 from typing import Any
-
-from opentelemetry import trace
 
 
 # Configuration
@@ -78,7 +72,7 @@ def sanitize_log_dict(data: dict, max_length: int = 1000) -> dict:
 
 
 def setup_logging() -> logging.Logger:
-    """Initialize logging with console handler (stdout captured by ECS awslogs / Lambda)."""
+    """Initialize logging with console handler."""
     global _logger
 
     if _logger is not None:
@@ -111,15 +105,5 @@ def get_logger() -> logging.Logger:
 
 
 def flush_traces():
-    """Force flush pending ADOT traces and Langfuse events."""
-    try:
-        provider = trace.get_tracer_provider()
-        if hasattr(provider, 'force_flush'):
-            provider.force_flush(timeout_millis=5000)
-    except Exception as e:
-        print(f"[Observability] Error flushing ADOT traces: {e}")
-    try:
-        from langfuse import get_client
-        get_client().flush()
-    except Exception as e:
-        print(f"[Observability] Error flushing Langfuse: {e}")
+    """No-op — retained for backward compatibility with callers."""
+    pass

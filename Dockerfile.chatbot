@@ -1,4 +1,4 @@
-# RAG Chatbot - Standalone Dockerfile (no Anthropic API key needed)
+# RAG Chatbot - Standalone Dockerfile
 # Multi-stage build: Node for frontend, Python for backend
 
 # Stage 1: Build frontend
@@ -17,13 +17,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install ADOT auto-instrumentation packages (botocore, FastAPI, urllib3, etc.)
-RUN opentelemetry-bootstrap -a install || true
-
 # Copy chatbot application code
 COPY chatbot.py .
 COPY chatbot_server.py .
 COPY observability.py .
+COPY vector_store.py .
 
 # Copy built frontend from stage 1
 COPY --from=frontend-build /frontend/dist/ ./frontend/dist/
@@ -33,4 +31,4 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 EXPOSE 8081
 
-CMD ["opentelemetry-instrument", "python", "chatbot_server.py"]
+CMD ["python", "chatbot_server.py"]

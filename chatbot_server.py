@@ -1,6 +1,6 @@
-"""FastAPI server for RAG Chatbot - queries YouTube video summaries via Bedrock Knowledge Base.
+"""FastAPI server for RAG Chatbot - queries YouTube video summaries via Supabase pgvector.
 
-Standalone server, no dependency on agent.py or Anthropic API key.
+Standalone server.
 Run: python chatbot_server.py (port 8081)
 """
 
@@ -16,13 +16,6 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 load_dotenv()
-
-# Auto-instrument LangChain for OTEL/X-Ray traces
-try:
-    from opentelemetry.instrumentation.langchain import LangchainInstrumentor
-    LangchainInstrumentor().instrument()
-except ImportError:
-    pass
 
 from chatbot import chat, chat_stream
 
@@ -60,12 +53,8 @@ FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     print("Chatbot Server starting...")
-    kb_configured = bool(os.environ.get("KNOWLEDGE_BASE_ID"))
-    guardrail_configured = bool(
-        os.environ.get("BEDROCK_GUARDRAIL_ID") and os.environ.get("BEDROCK_GUARDRAIL_VERSION")
-    )
-    print(f"  Knowledge Base configured: {kb_configured}")
-    print(f"  Guardrail configured: {guardrail_configured}")
+    vector_store_configured = bool(os.environ.get("SUPABASE_URL"))
+    print(f"  Vector store configured: {vector_store_configured}")
     if FRONTEND_DIST.exists():
         print(f"  Frontend build found at {FRONTEND_DIST}")
     else:
@@ -76,7 +65,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="YouTube Summaries Chatbot",
-    description="RAG chatbot for querying YouTube video summaries via Bedrock Knowledge Base",
+    description="RAG chatbot for querying YouTube video summaries",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -117,18 +106,15 @@ async def health():
     return {
         "status": "healthy",
         "service": "youtube-summaries-chatbot",
-        "knowledge_base_configured": bool(os.environ.get("KNOWLEDGE_BASE_ID")),
-        "guardrail_configured": bool(
-            os.environ.get("BEDROCK_GUARDRAIL_ID") and os.environ.get("BEDROCK_GUARDRAIL_VERSION")
-        ),
+        "vector_store_configured": bool(os.environ.get("SUPABASE_URL")),
     }
 
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, raw_request: Request):
     """Non-streaming chat with RAG retrieval."""
-    if not os.environ.get("KNOWLEDGE_BASE_ID"):
-        raise HTTPException(status_code=503, detail="Knowledge Base not configured")
+    if not os.environ.get("SUPABASE_URL"):
+        raise HTTPException(status_code=503, detail="Vector store not configured (SUPABASE_URL)")
 
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
     user_id = _extract_user_id(raw_request)
@@ -140,8 +126,8 @@ async def chat_endpoint(request: ChatRequest, raw_request: Request):
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(request: ChatRequest, raw_request: Request):
     """Streaming chat with RAG retrieval via SSE."""
-    if not os.environ.get("KNOWLEDGE_BASE_ID"):
-        raise HTTPException(status_code=503, detail="Knowledge Base not configured")
+    if not os.environ.get("SUPABASE_URL"):
+        raise HTTPException(status_code=503, detail="Vector store not configured (SUPABASE_URL)")
 
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
     user_id = _extract_user_id(raw_request)

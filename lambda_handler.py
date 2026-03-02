@@ -5,13 +5,6 @@ import json
 from dotenv import load_dotenv
 load_dotenv()
 
-# Auto-instrument LangChain for OTEL/X-Ray traces
-try:
-    from opentelemetry.instrumentation.langchain import LangchainInstrumentor
-    LangchainInstrumentor().instrument()
-except ImportError:
-    pass
-
 from observability import get_logger, flush_traces
 from agent import run_agent, run_agent_with_transcript
 
@@ -46,13 +39,11 @@ def handler(event, context):
         "body": "{\"video_url\": \"https://www.youtube.com/watch?v=VIDEO_ID\"}"
     }
     """
-    request_id = getattr(context, 'aws_request_id', None) if context else None
-
     try:
         # Handle pre-fetched transcript from local fetcher
         is_prefetched = isinstance(event, dict) and event.get("process_transcript")
         if is_prefetched:
-            return _process_prefetched_transcript(event, request_id=request_id)
+            return _process_prefetched_transcript(event)
 
         video_url = None
         channel_url = None
@@ -76,7 +67,6 @@ def handler(event, context):
 
         logger.info(json.dumps({
             "event": "lambda_invocation",
-            "request_id": request_id,
             "has_video_url": video_url is not None,
             "has_channel_url": channel_url is not None,
             "has_channel_urls": channel_urls is not None,
@@ -84,15 +74,15 @@ def handler(event, context):
 
         # Handle multiple channels
         if channel_urls and isinstance(channel_urls, list):
-            return _process_multiple_channels(channel_urls, request_id=request_id)
+            return _process_multiple_channels(channel_urls)
 
         # Handle single channel
         if channel_url:
-            return _process_single_url(channel_url, "channel_url", request_id=request_id)
+            return _process_single_url(channel_url, "channel_url")
 
         # Handle video URL
         if video_url:
-            return _process_single_url(video_url, "video_url", request_id=request_id)
+            return _process_single_url(video_url, "video_url")
 
         # No valid input
         return {
@@ -114,7 +104,7 @@ def handler(event, context):
         flush_traces()
 
 
-def _process_prefetched_transcript(event: dict, request_id: str = None) -> dict:
+def _process_prefetched_transcript(event: dict) -> dict:
     """Process a transcript that was pre-fetched by local fetcher."""
     video_url = event["video_url"]
     video_title = event["video_title"]
@@ -137,9 +127,6 @@ def _process_prefetched_transcript(event: dict, request_id: str = None) -> dict:
             channel_id=channel_id,
             channel_name=channel_name,
             transcript=transcript,
-            session_id=request_id,
-            user_id="lambda",
-            extra_tags=["lambda", "prefetched"],
         )
 
         return {
@@ -156,10 +143,10 @@ def _process_prefetched_transcript(event: dict, request_id: str = None) -> dict:
         }
 
 
-def _process_single_url(url: str, url_type: str, request_id: str = None) -> dict:
+def _process_single_url(url: str, url_type: str) -> dict:
     """Process a single video or channel URL."""
     try:
-        result = run_agent(url, session_id=request_id, user_id="lambda", extra_tags=["lambda"])
+        result = run_agent(url)
 
         return {
             "statusCode": 200,
@@ -182,7 +169,7 @@ def _process_single_url(url: str, url_type: str, request_id: str = None) -> dict
         }
 
 
-def _process_multiple_channels(channel_urls: list, request_id: str = None) -> dict:
+def _process_multiple_channels(channel_urls: list) -> dict:
     """Process multiple channel URLs for scheduled runs."""
     results = []
 
@@ -195,7 +182,7 @@ def _process_multiple_channels(channel_urls: list, request_id: str = None) -> di
             continue
 
         try:
-            result = run_agent(channel_url, session_id=request_id, user_id="lambda", extra_tags=["lambda", "batch"])
+            result = run_agent(channel_url)
             results.append({
                 "channel_url": channel_url,
                 "success": True,

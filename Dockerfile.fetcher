@@ -1,9 +1,9 @@
 # Local transcript fetcher container with cron
 #
-# This container runs on a local machine to fetch YouTube transcripts
-# (avoiding IP blocking) and sends them to Lambda for AI processing.
+# This container runs on a homelab server. It fetches YouTube transcripts
+# locally (avoiding IP blocking) and runs the agent directly in-process.
 
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Install curl for supercronic download
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -25,8 +25,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy full application code (fetcher now runs agent in-process)
 COPY local_fetcher.py .
+COPY agent.py .
+COPY observability.py .
+COPY vector_store.py .
 COPY tools/ ./tools/
 
 # Create crontab file (every 30 minutes)
@@ -34,6 +37,8 @@ RUN echo "*/30 * * * * cd /app && python local_fetcher.py >> /var/log/fetcher.lo
 
 # Create log file
 RUN touch /var/log/fetcher.log
+
+ENV PYTHONUNBUFFERED=1
 
 # Default: run supercronic with our crontab
 CMD ["supercronic", "/app/crontab"]

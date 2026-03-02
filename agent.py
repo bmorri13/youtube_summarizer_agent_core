@@ -1,27 +1,21 @@
-"""YouTube Analyzer Agent — LangGraph + ChatBedrockConverse."""
+"""YouTube Analyzer Agent — LangGraph + ChatAnthropic."""
 
 import os
 import sys
-import uuid
 
-import boto3
 from dotenv import load_dotenv
-from langchain_aws import ChatBedrockConverse
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage
-from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
 from langgraph.prebuilt import create_react_agent
 
-from observability import get_logger, flush_traces
+from observability import get_logger
 from tools import ALL_TOOLS
 
 # Load environment variables
 load_dotenv()
 
 # Configuration
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-GUARDRAIL_ID = os.environ.get("BEDROCK_GUARDRAIL_ID", "")
-GUARDRAIL_VERSION = os.environ.get("BEDROCK_GUARDRAIL_VERSION", "")
-AWS_REGION = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250514")
 
 SYSTEM_PROMPT = """You are a YouTube video analyzer assistant. You can analyze individual videos or check channels for new content.
 
@@ -67,62 +61,24 @@ Format your analysis in clear markdown. Be concise but thorough.
 If the transcript cannot be fetched (disabled, unavailable, etc.), inform the user and do not proceed with the other steps.
 """
 
-_bedrock_client = None
-
-
-def _get_bedrock_client():
-    global _bedrock_client
-    if _bedrock_client is None:
-        _bedrock_client = boto3.client("bedrock-runtime", region_name=AWS_REGION)
-    return _bedrock_client
-
-
 def _create_model():
-    """Create ChatBedrockConverse with optional guardrails."""
-    kwargs = {
-        "client": _get_bedrock_client(),
-        "model_id": CLAUDE_MODEL,
-        "max_tokens": 4096,
-    }
-    if GUARDRAIL_ID and GUARDRAIL_VERSION:
-        kwargs["guardrail_config"] = {
-            "guardrailIdentifier": GUARDRAIL_ID,
-            "guardrailVersion": GUARDRAIL_VERSION,
-            "trace": "enabled",
-        }
-    return ChatBedrockConverse(**kwargs)
+    """Create ChatAnthropic model."""
+    return ChatAnthropic(model=CLAUDE_MODEL, max_tokens=4096)
 
 
-def _build_config(session_id=None, user_id=None, tags=None, max_turns=10):
-    """Build LangGraph config with Langfuse callback handler and metadata."""
-    handler = LangfuseCallbackHandler()
-    metadata = {}
-    if session_id:
-        metadata["langfuse_session_id"] = session_id
-    if user_id:
-        metadata["langfuse_user_id"] = user_id
-    if tags:
-        metadata["langfuse_tags"] = tags
-    return {
-        "callbacks": [handler],
-        "recursion_limit": (max_turns * 2) + 1,
-        "metadata": metadata,
-    }
+def _build_config(max_turns=10):
+    """Build LangGraph config."""
+    return {"recursion_limit": (max_turns * 2) + 1}
 
 
-def run_agent(video_url: str, max_turns: int = 10, session_id: str = None,
-              user_id: str = None, extra_tags: list = None) -> str:
+def run_agent(video_url: str, max_turns: int = 10) -> str:
     """Run the YouTube analyzer agent."""
     logger = get_logger()
-    session_id = session_id or str(uuid.uuid4())
-
-    is_channel = any(p in video_url for p in ["/@", "/channel/", "/c/", "/user/"])
-    tags = list(extra_tags or []) + ["agent", "channel" if is_channel else "video"]
 
     model = _create_model()
     graph = create_react_agent(model, tools=ALL_TOOLS)
 
-    config = _build_config(session_id=session_id, user_id=user_id, tags=tags, max_turns=max_turns)
+    config = _build_config(max_turns=max_turns)
 
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
@@ -136,8 +92,6 @@ def run_agent(video_url: str, max_turns: int = 10, session_id: str = None,
     except Exception as e:
         logger.error(f"Agent error: {e}")
         raise
-    finally:
-        flush_traces()
 
 
 def run_agent_with_transcript(
@@ -148,14 +102,9 @@ def run_agent_with_transcript(
     transcript: str,
     channel_id: str = None,
     max_turns: int = 10,
-    session_id: str = None,
-    user_id: str = None,
-    extra_tags: list = None,
 ) -> str:
     """Run agent with pre-fetched transcript (hybrid fetcher mode)."""
     logger = get_logger()
-    session_id = session_id or str(uuid.uuid4())
-    tags = list(extra_tags or []) + ["agent", "prefetched"]
 
     # Filter out transcript/channel tools — agent already has the data
     filtered_tools = [t for t in ALL_TOOLS
@@ -164,7 +113,7 @@ def run_agent_with_transcript(
     model = _create_model()
     graph = create_react_agent(model, tools=filtered_tools)
 
-    config = _build_config(session_id=session_id, user_id=user_id, tags=tags, max_turns=max_turns)
+    config = _build_config(max_turns=max_turns)
 
     # Build prompt with transcript embedded
     prefetch_prompt = f"""I already have the transcript for this video:
@@ -192,8 +141,6 @@ Please analyze this transcript and create a summary. Save the note (include vide
     except Exception as e:
         logger.error(f"Agent error (prefetched): {e}")
         raise
-    finally:
-        flush_traces()
 
 
 def main():

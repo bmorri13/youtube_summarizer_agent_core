@@ -2,7 +2,6 @@
 #
 # Usage:
 #   Local development:     docker-compose up local
-#   Lambda emulation:      docker-compose up lambda
 #   HTTP server mode:      docker-compose up server
 
 services:
@@ -22,13 +21,6 @@ services:
       - NOTES_BACKEND=local
       - NOTES_LOCAL_DIR=/app/notes
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
-      # Langfuse LLM Observability
-      - LANGFUSE_HOST=${LANGFUSE_HOST:-}
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
     volumes:
       - ./notes:/app/notes
       - ./.env:/app/.env:ro
@@ -47,40 +39,9 @@ services:
       - NOTES_BACKEND=local
       - NOTES_LOCAL_DIR=/app/notes
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
-      # Langfuse LLM Observability
-      - LANGFUSE_HOST=${LANGFUSE_HOST:-}
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
     volumes:
       - ./notes:/app/notes
     command: python agent.py "${VIDEO_URL:-https://www.youtube.com/watch?v=dQw4w9WgXcQ}"
-
-  # Lambda emulation for testing Lambda deployment
-  lambda:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: youtube-analyzer-lambda
-    ports:
-      - "9000:8080"
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
-      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
-      - NOTES_BACKEND=local
-      - NOTES_LOCAL_DIR=/tmp/notes
-      - CLAUDE_MODEL=claude-sonnet-4-20250514
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      # Langfuse LLM Observability
-      - LANGFUSE_HOST=${LANGFUSE_HOST:-}
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
-    volumes:
-      - ./notes:/tmp/notes
 
   # HTTP server mode (FastAPI)
   server:
@@ -97,18 +58,11 @@ services:
       - NOTES_BACKEND=local
       - NOTES_LOCAL_DIR=/app/notes
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
-      # Langfuse LLM Observability
-      - LANGFUSE_HOST=${LANGFUSE_HOST:-}
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
     volumes:
       - ./notes:/app/notes
     command: python server.py
 
-  # RAG Chatbot (standalone - no Anthropic API key needed)
+  # RAG Chatbot
   chatbot:
     build:
       context: .
@@ -117,25 +71,17 @@ services:
     ports:
       - "8081:8081"
     environment:
-      # Bedrock Knowledge Base
-      - KNOWLEDGE_BASE_ID=${KNOWLEDGE_BASE_ID:-}
-      - CHATBOT_MODEL_ID=${CHATBOT_MODEL_ID:-us.anthropic.claude-sonnet-4-5-20250929-v1:0}
-      - BEDROCK_GUARDRAIL_ID=${BEDROCK_GUARDRAIL_ID:-}
-      - BEDROCK_GUARDRAIL_VERSION=${BEDROCK_GUARDRAIL_VERSION:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CHATBOT_MODEL_ID=${CHATBOT_MODEL_ID:-claude-sonnet-4-5-20250514}
       - KB_MAX_RESULTS=${KB_MAX_RESULTS:-5}
-      # AWS credentials for Bedrock access
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      # Langfuse LLM Observability
-      - LANGFUSE_HOST=${LANGFUSE_HOST:-}
-      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
-      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
     command: python chatbot_server.py
 
   # Local transcript fetcher (runs on cron)
-  # Fetches transcripts locally (bypasses YouTube IP blocking) and sends to Lambda
   fetcher:
     build:
       context: .
@@ -143,14 +89,26 @@ services:
     container_name: youtube-fetcher
     environment:
       - MONITOR_CHANNEL_URLS=${MONITOR_CHANNEL_URLS}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION=${AWS_REGION:-us-east-1}
-      - LAMBDA_FUNCTION_NAME=${LAMBDA_FUNCTION_NAME:-youtube-analyzer}
-      - NOTES_S3_BUCKET=${NOTES_S3_BUCKET}
-      - NOTES_BACKEND=s3
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - NOTES_BACKEND=local
+      - NOTES_LOCAL_DIR=/app/notes
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
+      - ./notes:/app/notes
       - fetcher-logs:/var/log
+    restart: unless-stopped
+
+  # Cloudflare Tunnel for external access
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     restart: unless-stopped
 
 volumes:

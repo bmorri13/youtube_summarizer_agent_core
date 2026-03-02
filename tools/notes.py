@@ -116,6 +116,14 @@ def save_note(
                 note_path=path
             )
 
+        # Ingest into vector store if configured
+        try:
+            if os.environ.get("SUPABASE_URL"):
+                from vector_store import ingest_document
+                ingest_document(content, path, metadata={"title": title})
+        except Exception as e:
+            logger.warning(f"Vector ingestion failed (non-fatal): {e}")
+
         return json.dumps({
             "success": True,
             "path": path

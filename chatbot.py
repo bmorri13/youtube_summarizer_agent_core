@@ -1,49 +1,20 @@
-"""RAG Chatbot - Query YouTube video summaries via Bedrock Knowledge Base.
+"""RAG Chatbot - Query YouTube video summaries via Supabase pgvector.
 
-Uses Retrieve (direct boto3) + ChatBedrockConverse for full control
-over system prompt, guardrails, streaming, and observability.
+Uses vector_store for retrieval + ChatAnthropic for generation.
 """
 
 import json
 import os
 import uuid
 
-import boto3
-from langchain_aws import ChatBedrockConverse
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler
 
 from observability import sanitize_log_value, get_logger
 
-# Langfuse trace-level update support
-_langfuse_client = None
-
-
-def _get_langfuse_client():
-    global _langfuse_client
-    if _langfuse_client is None:
-        from langfuse import Langfuse
-        _langfuse_client = Langfuse()
-    return _langfuse_client
-
-
-def _update_langfuse_trace(user_query: str, response_text: str):
-    """Update the current OTEL trace in Langfuse with input/output for the traces list view."""
-    logger = get_logger()
-    try:
-        client = _get_langfuse_client()
-        client.update_current_trace(input=user_query, output=response_text)
-        logger.info("Langfuse trace updated with input/output")
-    except Exception as e:
-        logger.warning(f"Failed to update Langfuse trace: {e}")
-
 # Configuration
-KNOWLEDGE_BASE_ID = os.environ.get("KNOWLEDGE_BASE_ID", "")
-CHATBOT_MODEL_ID = os.environ.get("CHATBOT_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
-GUARDRAIL_ID = os.environ.get("BEDROCK_GUARDRAIL_ID", "")
-GUARDRAIL_VERSION = os.environ.get("BEDROCK_GUARDRAIL_VERSION", "")
+CHATBOT_MODEL_ID = os.environ.get("CHATBOT_MODEL_ID", "claude-sonnet-4-5-20250514")
 KB_MAX_RESULTS = int(os.environ.get("KB_MAX_RESULTS", "5"))
-AWS_REGION = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
 
 SYSTEM_PROMPT = """You are a helpful assistant that answers questions about YouTube videos that have been analyzed and summarized.
 
@@ -54,79 +25,24 @@ Do NOT make up information or use knowledge outside of the provided context. Alw
 Retrieved context:
 {context}"""
 
-# Lazy-initialized clients
-_bedrock_agent_client = None
-_bedrock_runtime_client = None
-
-
-def _get_agent_client():
-    global _bedrock_agent_client
-    if _bedrock_agent_client is None:
-        _bedrock_agent_client = boto3.client("bedrock-agent-runtime", region_name=AWS_REGION)
-    return _bedrock_agent_client
-
-
-def _get_runtime_client():
-    global _bedrock_runtime_client
-    if _bedrock_runtime_client is None:
-        _bedrock_runtime_client = boto3.client("bedrock-runtime", region_name=AWS_REGION)
-    return _bedrock_runtime_client
-
-
 def _create_chatbot_model():
-    """Create ChatBedrockConverse with optional guardrails."""
-    kwargs = {
-        "client": _get_runtime_client(),
-        "model_id": CHATBOT_MODEL_ID,
-        "max_tokens": 2048,
-        "temperature": 0.3,
-    }
-    if GUARDRAIL_ID and GUARDRAIL_VERSION:
-        kwargs["guardrail_config"] = {
-            "guardrailIdentifier": GUARDRAIL_ID,
-            "guardrailVersion": GUARDRAIL_VERSION,
-            "trace": "enabled",
-        }
-        kwargs["guard_last_turn_only"] = True  # Multi-turn optimization
-    return ChatBedrockConverse(**kwargs)
+    """Create ChatAnthropic model."""
+    return ChatAnthropic(model=CHATBOT_MODEL_ID, max_tokens=2048, temperature=0.3)
 
 
-def retrieve_from_knowledge_base(query: str, kb_id: str = None, max_results: int = None):
-    """Retrieve relevant documents from Bedrock Knowledge Base."""
+def retrieve_documents(query: str, max_results: int = None):
+    """Retrieve relevant documents from Supabase pgvector."""
     logger = get_logger()
-    kb_id = kb_id or KNOWLEDGE_BASE_ID
     max_results = max_results or KB_MAX_RESULTS
 
-    if not kb_id:
-        logger.warning("KNOWLEDGE_BASE_ID not configured")
+    try:
+        from vector_store import retrieve_similar_documents
+        results = retrieve_similar_documents(query, max_results=max_results)
+        logger.info(f"Vector retrieve: {len(results)} results for query: {sanitize_log_value(query, 100)}")
+        return results
+    except Exception as e:
+        logger.error(f"Vector retrieval failed: {e}")
         return []
-
-    client = _get_agent_client()
-
-    response = client.retrieve(
-        knowledgeBaseId=kb_id,
-        retrievalQuery={"text": query},
-        retrievalConfiguration={
-            "vectorSearchConfiguration": {
-                "numberOfResults": max_results,
-            }
-        },
-    )
-
-    results = []
-    for result in response.get("retrievalResults", []):
-        text = result.get("content", {}).get("text", "")
-        score = result.get("score", 0.0)
-        source_uri = result.get("location", {}).get("s3Location", {}).get("uri", "")
-
-        results.append({
-            "text": text,
-            "score": score,
-            "source_uri": source_uri,
-        })
-
-    logger.info(f"KB retrieve: {len(results)} results for query: {sanitize_log_value(query, 100)}")
-    return results
 
 
 def _extract_text(content):
@@ -188,37 +104,20 @@ def chat(messages: list, session_id: str = None, user_id: str = None):
             "session_id": session_id,
         }
 
-    # Retrieve from KB
-    kb_results = retrieve_from_knowledge_base(user_query)
-    context, sources = _build_context_and_sources(kb_results)
+    # Retrieve from vector store
+    results = retrieve_documents(user_query)
+    context, sources = _build_context_and_sources(results)
     system_prompt = SYSTEM_PROMPT.format(context=context)
 
     # Build LangChain messages
     lc_messages = _convert_to_langchain_messages(system_prompt, messages)
 
-    # Create model and handler
+    # Create model and invoke
     model = _create_chatbot_model()
-    handler = LangfuseCallbackHandler()
-    config = {
-        "callbacks": [handler],
-        "metadata": {
-            "langfuse_session_id": session_id,
-            "langfuse_user_id": user_id,
-            "langfuse_tags": ["chatbot"],
-        },
-    }
-
-    response = model.invoke(lc_messages, config=config)
-
-    # Check for guardrail intervention
-    stop_reason = response.response_metadata.get("stopReason", "")
-    if stop_reason == "guardrail_intervened":
-        logger.warning(f"Guardrail intervened for session {session_id}")
+    response = model.invoke(lc_messages)
 
     usage = response.usage_metadata or {}
     response_text = _extract_text(response.content)
-
-    _update_langfuse_trace(user_query, response_text)
 
     return {
         "response": response_text,
@@ -248,9 +147,9 @@ def chat_stream(messages: list, session_id: str = None, user_id: str = None):
         yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
         return
 
-    # Retrieve from KB
-    kb_results = retrieve_from_knowledge_base(user_query)
-    context, sources = _build_context_and_sources(kb_results)
+    # Retrieve from vector store
+    results = retrieve_documents(user_query)
+    context, sources = _build_context_and_sources(results)
     system_prompt = SYSTEM_PROMPT.format(context=context)
 
     # Send sources early
@@ -259,25 +158,12 @@ def chat_stream(messages: list, session_id: str = None, user_id: str = None):
     # Build LangChain messages
     lc_messages = _convert_to_langchain_messages(system_prompt, messages)
 
-    # Create model and handler
+    # Create model and stream
     model = _create_chatbot_model()
-    handler = LangfuseCallbackHandler()
-    config = {
-        "callbacks": [handler],
-        "metadata": {
-            "langfuse_session_id": session_id,
-            "langfuse_user_id": user_id,
-            "langfuse_tags": ["chatbot", "streaming"],
-        },
-    }
 
-    full_response = []
-    for chunk in model.stream(lc_messages, config=config):
+    for chunk in model.stream(lc_messages):
         text = _extract_text(chunk.content)
         if text:
-            full_response.append(text)
             yield f"data: {json.dumps({'type': 'chunk', 'content': text})}\n\n"
-
-    _update_langfuse_trace(user_query, "".join(full_response))
 
     yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
