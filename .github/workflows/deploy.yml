@@ -71,9 +71,17 @@ jobs:
             -e "ssh -o StrictHostKeyChecking=no" \
             ./ ${TS_SSH_USER}@${TS_SSH_HOST}:/opt/docker/youtube-analyzer/
 
+          # Stop old fetcher deployment if it exists (migrated to youtube-analyzer)
+          ssh -o StrictHostKeyChecking=no ${TS_SSH_USER}@${TS_SSH_HOST} "
+            if [ -f /opt/docker/yt-transcript/docker-compose.yml ]; then
+              cd /opt/docker/yt-transcript && docker compose down || true
+            fi
+          "
+
           # Rebuild and restart all services
           ssh -o StrictHostKeyChecking=no ${TS_SSH_USER}@${TS_SSH_HOST} "
             cd /opt/docker/youtube-analyzer && \
+            docker compose down && \
             docker compose build && \
             docker compose up -d
           "
