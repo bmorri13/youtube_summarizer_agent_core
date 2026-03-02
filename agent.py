@@ -15,7 +15,7 @@ from tools import ALL_TOOLS
 load_dotenv()
 
 # Configuration
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250514")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
 
 SYSTEM_PROMPT = """You are a YouTube video analyzer assistant. You can analyze individual videos or check channels for new content.
 

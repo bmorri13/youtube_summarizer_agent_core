@@ -13,7 +13,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from observability import sanitize_log_value, get_logger
 
 # Configuration
-CHATBOT_MODEL_ID = os.environ.get("CHATBOT_MODEL_ID", "claude-sonnet-4-5-20250514")
+CHATBOT_MODEL_ID = os.environ.get("CHATBOT_MODEL_ID", "claude-sonnet-4-6")
 KB_MAX_RESULTS = int(os.environ.get("KB_MAX_RESULTS", "5"))
 
 SYSTEM_PROMPT = """You are a helpful assistant that answers questions about YouTube videos that have been analyzed and summarized.

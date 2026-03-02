@@ -72,7 +72,7 @@ services:
       - "8081:8081"
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - CHATBOT_MODEL_ID=${CHATBOT_MODEL_ID:-claude-sonnet-4-5-20250514}
+      - CHATBOT_MODEL_ID=${CHATBOT_MODEL_ID:-claude-sonnet-4-6}
       - KB_MAX_RESULTS=${KB_MAX_RESULTS:-5}
       - SUPABASE_URL=${SUPABASE_URL:-}
       - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-}

@@ -139,8 +139,8 @@ Optional:
 - `SLACK_WEBHOOK_URL` - Slack webhook for notifications
 - `NOTES_BACKEND` - `local` (default) or `s3`
 - `NOTES_LOCAL_DIR` - Directory for local notes (default: `./notes`)
-- `CLAUDE_MODEL` - Anthropic model ID (default: `claude-sonnet-4-5-20250514`)
-- `CHATBOT_MODEL_ID` - Anthropic model for chatbot (default: `claude-sonnet-4-5-20250514`)
+- `CLAUDE_MODEL` - Anthropic model ID (default: `claude-sonnet-4-6`)
+- `CHATBOT_MODEL_ID` - Anthropic model for chatbot (default: `claude-sonnet-4-6`)
 - `MONITOR_CHANNEL_URLS` - Comma-separated channel URLs for scheduled monitoring
 - `KB_MAX_RESULTS` - Max retrieval results per query (default: `5`)
 - `EMBEDDING_MODEL` - OpenAI embedding model (default: `text-embedding-3-small`)
