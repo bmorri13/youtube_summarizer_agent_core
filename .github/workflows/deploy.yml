@@ -68,9 +68,15 @@ jobs:
           TS_SSH_USER: ${{ secrets.TS_SSH_USER }}
         run: |
           # Sync code (exclude git, terraform, node_modules, .env)
+          #
+          # 'notes' MUST stay excluded. It holds runtime state — every generated
+          # summary plus processed_videos.json — and is gitignored, so it does not
+          # exist in the runner's checkout. Without the exclude, --delete removes
+          # the entire directory on the server on every single deploy.
           rsync -az --delete \
             --exclude '.git' --exclude 'terraform' --exclude 'node_modules' \
             --exclude 'frontend/node_modules' --exclude '.env' \
+            --exclude 'notes' \
             -e "ssh -o StrictHostKeyChecking=no" \
             ./ ${TS_SSH_USER}@${TS_SSH_HOST}:/opt/docker/youtube-analyzer/
 
