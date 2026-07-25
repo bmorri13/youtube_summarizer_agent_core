@@ -1,12 +1,23 @@
 # Docker Compose for YouTube Analyzer
 #
+# Only `fetcher` starts by default. Everything else is behind a compose profile,
+# so a bare `docker compose up -d` (as the deploy workflow runs) brings up the
+# cron fetcher and nothing else. Without profiles, `up -d` also started the
+# interactive REPL, the HTTP server, and the one-shot `analyze` service — which
+# ran against its placeholder default VIDEO_URL and wrote a junk note.
+#
 # Usage:
-#   Local development:     docker-compose up local
-#   HTTP server mode:      docker-compose up server
+#   Deployed/default:      docker compose up -d                       (fetcher only)
+#   Local development:     docker compose --profile dev up local
+#   HTTP server mode:      docker compose --profile server up server
+#   RAG chatbot:           docker compose --profile chatbot up -d chatbot
+#   Single video:          VIDEO_URL="https://..." docker compose --profile tools up analyze
+#   Cloudflare tunnel:     docker compose --profile tunnel up -d cloudflared
 
 services:
   # Local development - interactive mode
   local:
+    profiles: ["dev"]
     build:
       context: .
       dockerfile: Dockerfile.local
@@ -28,6 +39,7 @@ services:
 
   # Run a single video analysis
   analyze:
+    profiles: ["tools"]
     build:
       context: .
       dockerfile: Dockerfile.local
@@ -45,6 +57,7 @@ services:
 
   # HTTP server mode (FastAPI)
   server:
+    profiles: ["server"]
     build:
       context: .
       dockerfile: Dockerfile.local
@@ -62,8 +75,10 @@ services:
       - ./notes:/app/notes
     command: python server.py
 
-  # RAG Chatbot
+  # RAG Chatbot — intentionally not started by default (not currently in use).
+  # Bring it up with: docker compose --profile chatbot up -d chatbot
   chatbot:
+    profiles: ["chatbot"]
     build:
       context: .
       dockerfile: Dockerfile.chatbot
@@ -103,8 +118,10 @@ services:
       - fetcher-logs:/var/log
     restart: unless-stopped
 
-  # Cloudflare Tunnel for external access
+  # Cloudflare Tunnel for external access to the chatbot. Only useful alongside
+  # the chatbot profile, and requires CLOUDFLARE_TUNNEL_TOKEN to be set.
   cloudflared:
+    profiles: ["tunnel"]
     image: cloudflare/cloudflared:latest
     command: tunnel run
     environment:

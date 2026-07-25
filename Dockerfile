@@ -30,8 +30,12 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Lambda runs containers in a secure sandbox with its own user isolation
 # (sbx_user1051), regardless of the container's USER setting.
 # Adding USER here breaks Lambda's runtime initialization.
-# nosemgrep: dockerfile.security.missing-user, dockerfile.security.missing-user-entrypoint
+#
+# The nosemgrep annotations below must sit on the line immediately preceding the
+# offending instruction and use the full rule ID, or they are ignored.
 
 # Use opentelemetry-instrument wrapper for ADOT auto-instrumentation
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["opentelemetry-instrument"]
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["python", "-m", "awslambdaric", "lambda_handler.handler"]

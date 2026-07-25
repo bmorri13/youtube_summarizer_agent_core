@@ -2,7 +2,13 @@
 
 import json
 import re
-import xml.etree.ElementTree as ET
+
+# defusedxml hardens XML parsing against XXE and "billion laughs" style attacks.
+# The stdlib xml.etree parser resolves external entities and expands entity
+# references, so a malicious or hijacked feed response could exfiltrate local
+# files or exhaust memory. defusedxml raises EntitiesForbidden (a ValueError)
+# instead, which the caller below already handles.
+from defusedxml.ElementTree import ParseError, fromstring as xml_fromstring
 
 import requests
 from langchain_core.tools import tool
@@ -135,7 +141,7 @@ def _get_latest_channel_video_impl(channel_url: str, min_duration_seconds: int =
         response.raise_for_status()
 
         # Parse XML
-        root = ET.fromstring(response.content)
+        root = xml_fromstring(response.content)
 
         # Define namespaces used in YouTube RSS
         namespaces = {
@@ -209,7 +215,7 @@ def _get_latest_channel_video_impl(channel_url: str, min_duration_seconds: int =
             "success": False,
             "error": f"Failed to fetch RSS feed: {e}"
         }
-    except ET.ParseError as e:
+    except ParseError as e:
         return {
             "success": False,
             "error": f"Failed to parse RSS feed: {e}"

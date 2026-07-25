@@ -6,6 +6,8 @@ from .notes import (
     save_note,
     is_video_processed,
     mark_video_processed,
+    mark_vector_ingested,
+    get_pending_vector_ingestion,
     update_channel_checked,
 )
 from .slack import send_slack_notification
@@ -20,6 +22,8 @@ __all__ = [
     "get_latest_channel_video",
     "is_video_processed",
     "mark_video_processed",
+    "mark_vector_ingested",
+    "get_pending_vector_ingestion",
     "update_channel_checked",
     "ALL_TOOLS",
 ]

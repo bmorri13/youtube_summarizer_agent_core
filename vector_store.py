@@ -74,6 +74,61 @@ def retrieve_similar_documents(query: str, max_results: int = 5, match_threshold
         return []
 
 
+def keepalive() -> bool:
+    """Issue a cheap query to keep a Free-plan Supabase project from auto-pausing.
+
+    Supabase pauses Free-plan projects that receive too few user queries over a
+    7-day window. This project's only organic traffic is one insert per new video
+    (~1/day), which is under the threshold — it was paused for 7 weeks in 2026 as
+    a result. Calling this on every fetcher run keeps activity comfortably above it.
+
+    Returns:
+        True if the query succeeded, False otherwise (never raises).
+    """
+    logger = get_logger()
+
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        return False
+
+    try:
+        supabase = _get_supabase_client()
+        supabase.table("documents").select("id").limit(1).execute()
+        return True
+    except Exception as e:
+        logger.error(f"Supabase keepalive failed: {e}")
+        return False
+
+
+def list_ingested_source_uris() -> set[str]:
+    """Return the set of source_uri values already present in the documents table.
+
+    Used to make bulk ingestion idempotent. Raises on failure so callers can
+    distinguish "nothing ingested yet" from "could not reach the database" —
+    treating an error as an empty set would cause duplicate inserts.
+    """
+    supabase = _get_supabase_client()
+
+    uris: set[str] = set()
+    page = 0
+    page_size = 1000
+
+    while True:
+        response = (
+            supabase.table("documents")
+            .select("source_uri")
+            .range(page * page_size, page * page_size + page_size - 1)
+            .execute()
+        )
+        if not response.data:
+            break
+        for row in response.data:
+            if row.get("source_uri"):
+                uris.add(row["source_uri"])
+        page += 1
+
+    return uris
+
+
 def ingest_document(content: str, source_uri: str, metadata: dict = None) -> bool:
     """Embed and insert a document into Supabase pgvector.
 

@@ -106,6 +106,28 @@ def save_note(
             directory = os.environ.get("NOTES_LOCAL_DIR", "./notes")
             path = save_to_local(title, content, directory)
 
+        # Ingest into vector store if configured.
+        #
+        # This runs BEFORE mark_video_processed so the outcome can be recorded in
+        # the index. Ingestion failure is deliberately non-fatal — the note is
+        # already on disk and re-running the agent would cost another LLM call and
+        # create a duplicate note. Instead the failure is recorded so the fetcher's
+        # reconcile pass can retry just the ingestion later.
+        vector_ingested = None
+        if os.environ.get("SUPABASE_URL"):
+            vector_ingested = False
+            try:
+                from vector_store import ingest_document
+                vector_ingested = ingest_document(content, path, metadata={"title": title})
+            except Exception as e:
+                logger.error(f"Vector ingestion raised for {path}: {e}", exc_info=True)
+
+            if not vector_ingested:
+                logger.error(
+                    f"Vector ingestion FAILED for {path} — note saved to disk but "
+                    "absent from the vector store; queued for retry"
+                )
+
         # Track video as processed if video_id provided
         if video_id:
             mark_video_processed(
@@ -113,21 +135,23 @@ def save_note(
                 title=title,
                 channel_id=channel_id or "",
                 channel_name=channel_name or "",
-                note_path=path
+                note_path=path,
+                vector_ingested=vector_ingested
             )
 
-        # Ingest into vector store if configured
-        try:
-            if os.environ.get("SUPABASE_URL"):
-                from vector_store import ingest_document
-                ingest_document(content, path, metadata={"title": title})
-        except Exception as e:
-            logger.warning(f"Vector ingestion failed (non-fatal): {e}")
-
-        return json.dumps({
+        result = {
             "success": True,
             "path": path
-        })
+        }
+        if vector_ingested is not None:
+            result["vector_ingested"] = vector_ingested
+            if not vector_ingested:
+                result["warning"] = (
+                    "Note saved, but indexing into the vector store failed. "
+                    "It will be retried automatically; no action needed."
+                )
+
+        return json.dumps(result)
 
     except Exception as e:
         return json.dumps({
@@ -286,7 +310,8 @@ def mark_video_processed(
     title: str,
     channel_id: str,
     channel_name: str,
-    note_path: str
+    note_path: str,
+    vector_ingested: bool = None
 ) -> None:
     """Mark a video as processed in the index.
 
@@ -302,6 +327,9 @@ def mark_video_processed(
         channel_id: YouTube channel ID
         channel_name: Channel name
         note_path: Path where the note was saved
+        vector_ingested: Whether the note was successfully indexed into the
+            vector store. None means the vector store is not configured.
+            False marks the note for retry by the fetcher's reconcile pass.
     """
     try:
         index = load_processed_index()
@@ -325,10 +353,68 @@ def mark_video_processed(
         "title": title,
         "channel_id": channel_id,
         "channel_name": channel_name,
-        "note_path": note_path
+        "note_path": note_path,
+        "vector_ingested": vector_ingested
     }
 
     save_processed_index(index)
+
+
+def mark_vector_ingested(video_id: str, ingested: bool = True) -> None:
+    """Record the vector-store ingestion outcome for an already-processed video.
+
+    Used by the fetcher's reconcile pass to flip a note from pending to ingested
+    once a retry succeeds.
+
+    Args:
+        video_id: YouTube video ID
+        ingested: Whether ingestion has now succeeded
+    """
+    try:
+        index = load_processed_index()
+    except ProcessedIndexLoadError:
+        logger.error(
+            f"Skipping mark_vector_ingested for {video_id}: "
+            "could not load index safely"
+        )
+        return
+
+    entry = index.get("videos", {}).get(video_id)
+    if entry is None:
+        logger.warning(f"Cannot mark vector ingestion for unknown video {video_id}")
+        return
+
+    entry["vector_ingested"] = ingested
+    save_processed_index(index)
+
+
+def get_pending_vector_ingestion() -> list[dict]:
+    """Return processed videos whose notes are not yet in the vector store.
+
+    Only entries explicitly marked False are returned. Entries with None
+    (vector store not configured) and pre-existing entries missing the key
+    are ignored, so enabling this code on an existing index does not trigger
+    a mass re-ingest of notes that are already indexed.
+
+    Returns:
+        List of dicts with keys: video_id, note_path, title
+    """
+    try:
+        index = load_processed_index()
+    except ProcessedIndexLoadError:
+        logger.error("Cannot list pending vector ingestion: index unavailable")
+        return []
+
+    pending = []
+    for video_id, entry in index.get("videos", {}).items():
+        if entry.get("vector_ingested") is False:
+            pending.append({
+                "video_id": video_id,
+                "note_path": entry.get("note_path"),
+                "title": entry.get("title", ""),
+            })
+
+    return pending
 
 
 def update_channel_checked(

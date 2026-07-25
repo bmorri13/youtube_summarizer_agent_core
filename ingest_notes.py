@@ -4,8 +4,12 @@
 Reads markdown notes from a local directory and inserts them
 into the Supabase documents table with embeddings.
 
+Notes already present in the documents table are skipped, so this is safe to
+re-run — it ingests only the gap. Pass --force to ingest everything regardless
+(this will create duplicate rows).
+
 Usage:
-    python ingest_notes.py [notes_directory]
+    python ingest_notes.py [notes_directory] [--force] [--dry-run]
 """
 
 import os
@@ -14,12 +18,17 @@ import sys
 from dotenv import load_dotenv
 load_dotenv()
 
-from vector_store import ingest_document
+from vector_store import ingest_document, list_ingested_source_uris
 from observability import get_logger
 
 
-def ingest_notes_directory(directory: str) -> tuple[int, int]:
-    """Ingest all markdown files from a directory.
+def ingest_notes_directory(directory: str, force: bool = False, dry_run: bool = False) -> tuple[int, int]:
+    """Ingest markdown files from a directory, skipping those already ingested.
+
+    Args:
+        directory: Directory containing .md notes
+        force: Ingest every file even if already present (creates duplicates)
+        dry_run: Report what would be ingested without writing
 
     Returns:
         Tuple of (success_count, failure_count)
@@ -38,10 +47,34 @@ def ingest_notes_directory(directory: str) -> tuple[int, int]:
 
     print(f"Found {len(md_files)} markdown files in {directory}")
 
+    # Skip anything already in the table. Compared by basename so a note ingested
+    # under a different absolute path (e.g. /app/notes vs ./notes) still matches.
+    if force:
+        print("--force: skipping the already-ingested check (may create duplicates)")
+        already = set()
+    else:
+        try:
+            already = {os.path.basename(uri) for uri in list_ingested_source_uris()}
+            print(f"Already in vector store: {len(already)}")
+        except Exception as e:
+            logger.error(f"Could not read existing documents, aborting to avoid duplicates: {e}")
+            return 0, 0
+
+    pending = [f for f in md_files if f not in already]
+    skipped = len(md_files) - len(pending)
+    if skipped:
+        print(f"Skipping {skipped} already-ingested file(s)")
+    print(f"To ingest: {len(pending)}")
+
+    if dry_run:
+        for filename in pending:
+            print(f"  [dry-run] would ingest: {filename}")
+        return 0, 0
+
     success = 0
     failed = 0
 
-    for filename in md_files:
+    for filename in pending:
         filepath = os.path.join(directory, filename)
 
         try:
@@ -74,13 +107,20 @@ def ingest_notes_directory(directory: str) -> tuple[int, int]:
 
 
 def main():
-    directory = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("NOTES_LOCAL_DIR", "./notes")
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    flags = {a for a in sys.argv[1:] if a.startswith("-")}
+
+    directory = args[0] if args else os.environ.get("NOTES_LOCAL_DIR", "./notes")
 
     print(f"Ingesting notes from: {directory}")
     print(f"Supabase URL: {os.environ.get('SUPABASE_URL', 'NOT SET')}")
     print()
 
-    success, failed = ingest_notes_directory(directory)
+    success, failed = ingest_notes_directory(
+        directory,
+        force="--force" in flags,
+        dry_run="--dry-run" in flags,
+    )
 
     print(f"\nDone: {success} ingested, {failed} failed")
 

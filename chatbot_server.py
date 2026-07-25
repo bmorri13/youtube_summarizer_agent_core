@@ -4,6 +4,7 @@ Standalone server.
 Run: python chatbot_server.py (port 8081)
 """
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,6 +19,8 @@ from pydantic import BaseModel
 load_dotenv()
 
 from chatbot import chat, chat_stream
+
+logger = logging.getLogger(__name__)
 
 
 # --- Pydantic Models ---
@@ -145,10 +148,16 @@ async def chat_stream_endpoint(request: ChatRequest, raw_request: Request):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler."""
+    """Global exception handler.
+
+    Logs the exception server-side but returns a generic message. Echoing
+    str(exc) to the client leaks internal details — stack context, file paths,
+    and in the case of API client errors, fragments of request URLs.
+    """
+    logger.exception("Unhandled error handling %s %s", request.method, request.url.path)
     return JSONResponse(
         status_code=500,
-        content={"error": "Internal server error", "detail": str(exc)}
+        content={"error": "Internal server error"}
     )
 
 

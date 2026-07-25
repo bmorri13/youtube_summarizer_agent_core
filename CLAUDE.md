@@ -19,17 +19,20 @@ python agent.py "https://www.youtube.com/watch?v=VIDEO_ID"
 python agent.py "https://www.youtube.com/@ChannelName"
 
 # Docker services
-docker-compose up local     # Interactive local dev (REPL)
-docker-compose up server    # HTTP server (port 8080)
-docker-compose up chatbot   # RAG chatbot (port 8081)
-docker-compose up fetcher   # Transcript fetcher (cron, for home server)
-VIDEO_URL="https://..." docker-compose up analyze  # Single video analysis
+# Only `fetcher` starts by default — everything else is behind a compose profile,
+# so `docker compose up -d` (what the deploy runs) brings up the cron fetcher only.
+docker compose up -d                                    # fetcher only
+docker compose --profile dev up local                   # Interactive local dev (REPL)
+docker compose --profile server up server               # HTTP server (port 8080)
+docker compose --profile chatbot up -d chatbot          # RAG chatbot (port 8081)
+docker compose --profile tunnel up -d cloudflared       # Cloudflare Tunnel
+VIDEO_URL="https://..." docker compose --profile tools up analyze  # Single video
 
 # Manually trigger fetcher
 docker compose run --rm fetcher python local_fetcher.py
 
-# Ingest existing notes into Supabase vector store
-python ingest_notes.py [notes_directory]
+# Ingest existing notes into Supabase vector store (skips already-ingested; --force to override)
+python ingest_notes.py [notes_directory] [--dry-run] [--force]
 
 # Frontend dev
 cd frontend && npm run dev  # port 5173, proxies /api/* to localhost:8081
@@ -75,11 +78,29 @@ Notes are indexed for semantic search in Supabase Cloud:
 - **Storage**: Supabase PostgreSQL with pgvector extension
 - **Auto-ingest**: `save_note()` tool automatically ingests into vector store when `SUPABASE_URL` is configured
 - **Retrieval**: `vector_store.retrieve_similar_documents()` calls Supabase RPC `match_documents`
-- **Bulk ingest**: `python ingest_notes.py` for migrating existing notes
+- **Bulk ingest**: `python ingest_notes.py` for migrating existing notes (idempotent — skips rows already present)
 - **Schema**: See `supabase_schema.sql` — run in Supabase SQL editor to set up
+
+**Ingestion failures are recorded and retried, not swallowed.** Ingestion is non-fatal
+by design (the note is already on disk, and re-running the agent would cost another LLM
+call and duplicate the note), so instead `save_note()` records the outcome as
+`vector_ingested` in `processed_videos.json`, and `local_fetcher.reconcile_vector_store()`
+retries any entry marked `False` on every run. A Supabase outage therefore self-heals once
+it ends. Entries missing the key entirely are ignored, so this never triggers a mass
+re-ingest of an existing index.
+
+**Free-plan pause guard**: `vector_store.keepalive()` runs on every fetcher tick.
+Supabase pauses Free-plan projects receiving too few queries over 7 days; organic traffic
+here is ~1 insert/day, which is below the threshold — the project was paused for 7 weeks
+in 2026 as a result, silently dropping 39 notes. Remove this only if the project moves to
+a paid plan.
 
 ### RAG Chatbot
 A standalone chatbot that queries video summaries via Supabase pgvector.
+
+**Currently spun down** — the `chatbot` service sits behind the `chatbot` compose profile
+and is not started by the deploy. Bring it up with
+`docker compose --profile chatbot up -d chatbot`.
 
 **Architecture**: Retrieve (Supabase) + ChatAnthropic pattern:
 1. `chatbot.py` — Core logic: `retrieve_documents()` calls `vector_store.retrieve_similar_documents()`, then `chat()`/`chat_stream()` uses `ChatAnthropic`

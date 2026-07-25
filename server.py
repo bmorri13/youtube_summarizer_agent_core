@@ -1,7 +1,10 @@
 """FastAPI HTTP server for YouTube Analyzer Agent."""
 
+import logging
 import os
+import re
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -11,6 +14,35 @@ from pydantic import BaseModel
 load_dotenv()
 
 from agent import run_agent
+
+logger = logging.getLogger(__name__)
+
+# Hosts whose watch URLs we accept. Matched against the parsed hostname, not by
+# substring — "evil.com/?x=youtube.com" contains "youtube.com" but is not YouTube.
+ALLOWED_YOUTUBE_HOSTS = frozenset({
+    "youtube.com", "www.youtube.com", "m.youtube.com",
+    "youtu.be", "www.youtu.be",
+})
+
+VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+
+def is_valid_video_ref(value: str) -> bool:
+    """Return True if value is a bare 11-char video ID or a URL on a YouTube host."""
+    value = value.strip()
+
+    if VIDEO_ID_RE.match(value):
+        return True
+
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return False
+
+    if parsed.scheme not in ("http", "https"):
+        return False
+
+    return (parsed.hostname or "").lower() in ALLOWED_YOUTUBE_HOSTS
 
 
 class AnalyzeRequest(BaseModel):
@@ -83,28 +115,32 @@ async def analyze_video(request: AnalyzeRequest):
     if not request.video_url:
         raise HTTPException(status_code=400, detail="video_url is required")
 
-    # Validate it looks like a YouTube URL or video ID
-    if not any(domain in request.video_url for domain in ["youtube.com", "youtu.be"]):
-        if len(request.video_url) != 11:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid video_url. Provide a YouTube URL or 11-character video ID."
-            )
+    if not is_valid_video_ref(request.video_url):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid video_url. Provide a YouTube URL or 11-character video ID."
+        )
 
     try:
         result = run_agent(request.video_url)
         return AnalyzeResponse(video_url=request.video_url, result=result)
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Analysis failed for %s", request.video_url)
+        raise HTTPException(status_code=500, detail="Analysis failed")
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler."""
+    """Global exception handler.
+
+    Logs server-side and returns a generic message — echoing str(exc) to the
+    client leaks internal paths and upstream API error details.
+    """
+    logger.exception("Unhandled error handling %s %s", request.method, request.url.path)
     return JSONResponse(
         status_code=500,
-        content={"error": "Internal server error", "detail": str(exc)}
+        content={"error": "Internal server error"}
     )
 
 

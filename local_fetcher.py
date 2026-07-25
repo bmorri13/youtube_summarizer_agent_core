@@ -15,8 +15,52 @@ load_dotenv()
 from youtube_transcript_api import YouTubeTranscriptApi
 
 from agent import run_agent_with_transcript
-from tools import is_video_processed
+from tools import (
+    get_pending_vector_ingestion,
+    is_video_processed,
+    mark_vector_ingested,
+)
 from tools.channel import _get_latest_channel_video_impl as get_latest_channel_video
+
+
+def reconcile_vector_store() -> None:
+    """Retry vector-store ingestion for notes that previously failed to index.
+
+    Ingestion failures are non-fatal (the note is already on disk and the video
+    is marked processed to avoid a duplicate LLM run), so without this pass a
+    failed note would never make it into the vector store. This drains that
+    backlog on every run, so a Supabase outage self-heals once it ends.
+    """
+    if not os.environ.get("SUPABASE_URL"):
+        return
+
+    pending = get_pending_vector_ingestion()
+    if not pending:
+        return
+
+    print(f"Retrying vector ingestion for {len(pending)} note(s)...")
+
+    from vector_store import ingest_document
+
+    for item in pending:
+        note_path = item.get("note_path")
+
+        if not note_path or not os.path.exists(note_path):
+            print(f"  Skipping {item['video_id']}: note file missing ({note_path})")
+            continue
+
+        try:
+            with open(note_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except OSError as e:
+            print(f"  Skipping {item['video_id']}: cannot read note ({e})")
+            continue
+
+        if ingest_document(content, note_path, metadata={"title": item.get("title", "")}):
+            mark_vector_ingested(item["video_id"], True)
+            print(f"  Recovered: {os.path.basename(note_path)}")
+        else:
+            print(f"  Still failing: {os.path.basename(note_path)}")
 
 
 def fetch_and_process(channel_url: str) -> bool:
@@ -86,6 +130,16 @@ def main():
     if not channels:
         print("Error: No channels configured")
         sys.exit(1)
+
+    # Keep the Free-plan Supabase project from auto-pausing for low activity.
+    # Runs first so it happens even if channel processing fails.
+    if os.environ.get("SUPABASE_URL"):
+        from vector_store import keepalive
+        if not keepalive():
+            print("  Warning: Supabase keepalive query failed")
+
+    # Drain any backlog of notes that failed to index on a previous run.
+    reconcile_vector_store()
 
     print(f"Processing {len(channels)} channel(s)...")
 

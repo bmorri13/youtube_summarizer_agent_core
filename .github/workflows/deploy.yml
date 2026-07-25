@@ -19,11 +19,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Actions are pinned to full commit SHAs. Mutable tags (@v4) can be
+      # silently repointed by the action owner, which is how the trivy-action
+      # and kics-github-action supply-chain compromises reached consumers.
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Tailscale
-        uses: tailscale/github-action@v2
+        uses: tailscale/github-action@4e4c49acaa9818630ce0bd7a564372c17e33fb4d # v2
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
@@ -91,8 +94,19 @@ jobs:
           TS_SSH_HOST: ${{ secrets.TS_SSH_HOST }}
           TS_SSH_USER: ${{ secrets.TS_SSH_USER }}
         run: |
+          # Assert the fetcher is actually running, rather than just matching a
+          # name in `docker ps` — the previous grep passed even when a container
+          # had been dead for months.
           ssh -o StrictHostKeyChecking=no ${TS_SSH_USER}@${TS_SSH_HOST} "
-            docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -E 'chatbot|fetcher'
+            set -e
+            docker ps --format 'table {{.Names}}\t{{.Status}}'
+            state=\$(docker inspect -f '{{.State.Status}}' youtube-fetcher 2>/dev/null || echo missing)
+            echo \"youtube-fetcher state: \$state\"
+            if [ \"\$state\" != 'running' ]; then
+              echo '::error::youtube-fetcher is not running after deploy'
+              docker logs --tail 50 youtube-fetcher 2>&1 || true
+              exit 1
+            fi
           "
 
       - name: Summary
